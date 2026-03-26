@@ -409,5 +409,39 @@
                 }
             }
         }
+    },
+    "web_admin": {
+        "description": "🌐 Web 管理端设置",
+        "type": "object",
+        "items": {
+            "enabled": {
+                "description": "✅ 启用 Web 管理端",
+                "type": "bool",
+                "default": false,
+                "hint": "启用后会启动主动消息插件的独立 WebUI 管理端"
+            },
+            "host": {
+                "description": "监听地址",
+                "type": "string",
+                "default": "127.0.0.1",
+                "hint": "默认仅本机访问；如需局域网访问可改为 0.0.0.0"
+            },
+            "port": {
+                "description": "监听端口",
+                "type": "int",
+                "default": 4100,
+                "slider": {
+                    "min": 1024,
+                    "max": 65535,
+                    "step": 1
+                }
+            },
+            "password": {
+                "description": "访问密码（留空则无需登录）",
+                "type": "string",
+                "default": "",
+                "hint": "建议生产环境设置强密码"
+            }
+        }
     }
 }

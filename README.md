@@ -246,24 +246,63 @@
 
 ## 📂 插件目录与结构
 
-目录结构示例：
+从 v1.2.0 版本开始，插件已经重构为 **前端控制台 + 模块化后端核心** 的结构：
+
+- **前端 (`admin/`)**：提供独立 Web 管理端，负责运行状态展示、任务管理、配置编辑与实时同步。
+- **后端核心 (`core/`)**：拆分为多个职责明确的模块，分别处理会话配置、调度、消息发送、上下文构建、持久化与 Web 管理服务。
+- **插件入口 (`main.py`)**：作为 AstrBot 插件主入口，负责组装各核心模块并对接 AstrBot 生命周期。
+
+当前目录结构示例：
 
 ```bash
 AstrBot/
 └─ data/
    └─ plugins/
       └─ astrbot_plugin_proactive_chat/
-         ├─ .github/          # GitHub 相关配置
-         ├─ assets/           # 静态资源文件
-         ├─ _conf_schema.json # 配置文件结构定义
-         ├─ CHANGELOG.md      # 插件更新日志，适用于 AstrBot v4.11.2+
-         ├─ CONTRIBUTING.md   # 贡献指南
-         ├─ LICENSE           # 许可证文件
-         ├─ logo.png          # 插件Logo，适用于 AstrBot v4.5.0+
-         ├─ main.py           # 插件主程序入口
-         ├─ metadata.yaml     # 插件元数据
-         ├─ README.md         # 说明文档
-         └─ requirements.txt  # 依赖列表
+         ├─ admin/                            # 独立 Web 管理端前端资源
+         │  ├─ css/
+         │  │  └─ style.css                   # 管理端全局样式
+         │  │
+         │  ├─ fonts/
+         │  │  └─ outfit.css                  # 本地字体声明
+         │  │
+         │  ├─ index.html                     # 前端入口页面
+         │  │
+         │  └─ js/
+         │     ├─ app.jsx                     # 前端应用入口与视图装配
+         │     ├─ components/                 # 布局与配置渲染组件
+         │     ├─ context/                    # 全局状态上下文
+         │     ├─ hooks/                      # API / WebSocket 等复用逻辑
+         │     ├─ utils/                      # 认证、HTTP、格式化工具
+         │     └─ views/                      # 状态页、任务页、配置页视图
+         │
+         ├─ assets/                           # README / 仓库展示资源
+         │
+         ├─ core/                             # 模块化后端核心实现
+         │  ├─ chat_flow.py                   # 主动消息执行流与上下文组织
+         │  ├─ data_storage.py                # 数据读写与持久化辅助
+         │  ├─ llm_adapter.py                 # LLM 调用适配层
+         │  ├─ message_events.py              # AstrBot 事件接入与监听逻辑
+         │  ├─ message_sender.py              # 文本 / TTS / 分段消息发送
+         │  ├─ plugin_lifecycle.py            # 插件初始化、恢复与生命周期管理
+         │  ├─ session_config.py              # 会话配置解析与生效逻辑
+         │  ├─ session_override_manager.py    # 会话差异配置管理
+         │  ├─ session_parser.py              # 会话 ID 解析与规范化
+         │  ├─ task_scheduler.py              # 定时任务与触发调度逻辑
+         │  └─ web_admin_server.py            # 独立 Web 管理端后端服务
+         │
+         ├─ utils/
+         │  └─ time_utils.py                  # 通用时间工具函数
+         │
+         ├─ _conf_schema.json                 # 配置文件结构定义
+         ├─ CHANGELOG.md                      # 插件更新日志，适用于 AstrBot v4.11.2+
+         ├─ CONTRIBUTING.md                   # 贡献指南
+         ├─ LICENSE                           # 许可证文件
+         ├─ logo.png                          # 插件Logo，适用于 AstrBot v4.5.0+
+         ├─ main.py                           # AstrBot 插件主入口
+         ├─ metadata.yaml                     # 插件元数据
+         ├─ README.md                         # 说明文档
+         └─ requirements.txt                  # 依赖列表
 ```
 
 插件会在 `AstrBot/data/` 目录下创建自己的数据文件夹：
@@ -273,9 +312,9 @@ AstrBot/
 └─ data/
    └─ plugin_data/
       └─ astrbot_plugin_proactive_chat/
-         ├─ prompts_collection.md     # 自动生成的 Prompt 汇总
-         ├─ session_data.json         # 持久化会话数据
-         └─ user_config_snapshot.json # 用户配置备份
+         ├─ prompts_collection.md             # 自动生成的 Prompt 汇总
+         ├─ session_data.json                 # 持久化会话数据
+         └─ user_config_snapshot.json         # 用户配置备份
 ```
 
 ---

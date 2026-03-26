@@ -21,8 +21,10 @@ from .core.message_events import EventsMixin
 from .core.message_sender import SenderMixin
 from .core.plugin_lifecycle import LifecycleMixin
 from .core.session_config import ConfigMixin
+from .core.session_override_manager import SessionOverrideManager
 from .core.session_parser import SessionMixin
 from .core.task_scheduler import SchedulerMixin
+from .core.web_admin_server import WebAdminServer
 
 
 class ProactiveChatPlugin(
@@ -57,6 +59,10 @@ class ProactiveChatPlugin(
         # 共享锁与持久化数据容器
         self.data_lock = None
         self.session_data: dict = {}
+
+        # 会话差异配置管理器与 Web 管理端
+        self.session_override_manager = SessionOverrideManager(self.data_dir)
+        self.web_admin_server = WebAdminServer(self)
 
         # 群聊沉默倒计时与自动触发计时器
         self.group_timers: dict[str, asyncio.TimerHandle] = {}

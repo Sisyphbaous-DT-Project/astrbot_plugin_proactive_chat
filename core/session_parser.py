@@ -48,17 +48,81 @@ class SessionMixin:
 
         return None
 
+    def _get_session_name(
+        self, session_id: str, session_config: dict | None = None
+    ) -> str:
+        """获取会话备注名（用于日志与前端展示）。"""
+        normalized_session_id = self._normalize_session_id(session_id)
+
+        def _pick_name(payload: dict | None) -> str:
+            if not isinstance(payload, dict):
+                return ""
+            for key in ("session_name", "_session_name", "alias"):
+                raw = payload.get(key)
+                if raw is None:
+                    continue
+                text = str(raw).strip()
+                if text:
+                    return text
+            return ""
+
+        # 1) 优先用已传入的会话配置（减少重复查询）
+        name = _pick_name(session_config)
+        if name:
+            return name
+
+        # 2) 再尝试读取当前生效配置
+        try:
+            resolved_config = self._get_session_config(normalized_session_id)
+            name = _pick_name(resolved_config)
+            if name:
+                return name
+        except Exception:
+            pass
+
+        # 3) 读取会话覆写记录（兼容仅保存在 override 中的备注名）
+        manager = getattr(self, "session_override_manager", None)
+        if manager:
+            try:
+                override = manager.get_override(normalized_session_id)
+                name = _pick_name(override)
+                if name:
+                    return name
+            except Exception:
+                pass
+
+        # 4) 兼容历史运行态数据中的备注名
+        data = getattr(self, "session_data", {})
+        if isinstance(data, dict):
+            name = _pick_name(data.get(normalized_session_id))
+            if name:
+                return name
+            name = _pick_name(data.get(session_id))
+            if name:
+                return name
+
+        return ""
+
+    def _get_session_display_name(
+        self, session_id: str, session_config: dict | None = None
+    ) -> str:
+        """获取会话展示名：备注名优先，缺失时回退 UMO。"""
+        name = self._get_session_name(session_id, session_config)
+        return name if name else session_id
+
     def _get_session_log_str(
         self, session_id: str, session_config: dict | None = None
     ) -> str:
         """
         获取统一格式的会话日志字符串。
 
-        格式：私聊/群聊 ID
+        格式：私聊/群聊 ID (备注名)
         """
         parsed = self._parse_session_id(session_id)
+        session_name = self._get_session_name(session_id, session_config)
+
         if not parsed:
-            return session_id
+            return f"{session_id} ({session_name})" if session_name else session_id
 
         # 仅用于日志展示，不参与业务逻辑
         _, msg_type, target_id = parsed
@@ -68,7 +132,10 @@ class SessionMixin:
         elif "Group" in msg_type or "Guild" in msg_type:
             type_str = "群聊"
 
-        return f"{type_str} {target_id}"
+        log_str = f"{type_str} {target_id}"
+        if session_name:
+            log_str += f" ({session_name})"
+        return log_str
 
     def _resolve_full_umo(
         self, target_id: str, msg_type: str, preferred_platform: str | None = None
@@ -98,7 +165,7 @@ class SessionMixin:
             return f"{preferred_platform}:{msg_type}:{target_id}"
 
         # 次选：从历史 session_data 中寻找同目标且在线的平台
-        for existing_id in getattr(self, "session_data", {}).keys():
+        for existing_id in self.session_data.keys():
             if type_keyword in existing_id and existing_id.endswith(f":{target_id}"):
                 p_id = existing_id.split(":")[0]
                 if (

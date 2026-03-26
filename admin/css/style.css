@@ -1,0 +1,1847 @@
+/* Material Design 3 - 主动消息主题 */
+:root {
+    /* 整个管理端的设计令牌入口：亮色模式下所有组件都从这里读取颜色变量。 */
+    /* --- MD3 颜色令牌 (紫色种子) --- */
+    --md-sys-color-primary: #6750A4;
+    --md-sys-color-on-primary: #FFFFFF;
+    --md-sys-color-primary-container: #EADDFF;
+    --md-sys-color-on-primary-container: #21005D;
+
+    --md-sys-color-secondary: #625B71;
+    --md-sys-color-on-secondary: #FFFFFF;
+    --md-sys-color-secondary-container: #E8DEF8;
+    --md-sys-color-on-secondary-container: #1D192B;
+
+    --md-sys-color-surface: rgba(255, 255, 255, 0.8);
+    --md-sys-color-on-surface: #1C1B1F;
+    --md-sys-color-on-surface-variant: #49454F;
+    --md-sys-color-surface-variant: #E7E0EC;
+    
+    --md-sys-color-background: #FEF7FF;
+    --md-sys-color-outline-variant: rgba(103, 80, 164, 0.1);
+    
+    --glass-bg: rgba(255, 255, 255, 0.65);
+    --glass-border: rgba(103, 80, 164, 0.15);
+    --glass-shadow: 0 4px 20px 0 rgba(103, 80, 164, 0.08);
+
+    /* --- 形状 --- */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-xl: 28px;
+
+    /* --- 顶栏 --- */
+    --top-bar-height: 80px;
+}
+
+/* 暗色主题通过覆盖 CSS 变量切换外观，尽量避免为每个组件单独写一套颜色。 */
+body.dark-theme {
+    --md-sys-color-primary: #D0BCFF;
+    --md-sys-color-on-primary: #381E72;
+    --md-sys-color-primary-container: #4F378B;
+    --md-sys-color-on-primary-container: #EADDFF;
+
+    --md-sys-color-surface: rgba(28, 27, 31, 0.8);
+    --md-sys-color-on-surface: #E6E1E5;
+    --md-sys-color-on-surface-variant: #CAC4D0;
+    --md-sys-color-surface-variant: #49454F;
+
+    --md-sys-color-background: #141218;
+    --md-sys-color-outline-variant: rgba(208, 188, 255, 0.1);
+
+    --glass-bg: rgba(28, 27, 31, 0.7);
+    --glass-border: rgba(208, 188, 255, 0.1);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* 首屏主题预初始化（在 React 挂载前生效，减少 FOUC） */
+html.theme-dark body {
+    --md-sys-color-primary: #D0BCFF;
+    --md-sys-color-on-primary: #381E72;
+    --md-sys-color-primary-container: #4F378B;
+    --md-sys-color-on-primary-container: #EADDFF;
+
+    --md-sys-color-surface: rgba(28, 27, 31, 0.8);
+    --md-sys-color-on-surface: #E6E1E5;
+    --md-sys-color-on-surface-variant: #CAC4D0;
+    --md-sys-color-surface-variant: #49454F;
+
+    --md-sys-color-background: #141218;
+    --md-sys-color-outline-variant: rgba(208, 188, 255, 0.1);
+
+    --glass-bg: rgba(28, 27, 31, 0.7);
+    --glass-border: rgba(208, 188, 255, 0.1);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* ===== 基础重置与全局交互层 ===== */
+/* 基础样式 */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* 统一过渡效果，确保主题切换时各区域动画一致 */
+body, .app, .sidebar, .main-content, .card, .btn, .nav-item, .config-card, .config-header,
+.top-bar, .modal-container, input, select, textarea, button, .MuiPaper-root, .MuiAccordion-root,
+.MuiAccordionSummary-root, .MuiAccordionDetails-root {
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 移动端触摸优化 */
+html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+}
+
+body {
+    /* 背景使用多层径向渐变，营造轻量的 MD3 柔和氛围，而不是纯色平铺。 */
+    background-color: var(--md-sys-color-background);
+    background-image:
+        radial-gradient(at 0% 0%, rgba(103, 80, 164, 0.08) 0, transparent 40%),
+        radial-gradient(at 50% 0%, rgba(236, 72, 153, 0.05) 0, transparent 40%),
+        radial-gradient(at 100% 0%, rgba(103, 80, 164, 0.08) 0, transparent 40%);
+    background-attachment: fixed;
+    color: var(--md-sys-color-on-surface);
+    font-family: 'Outfit', "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Heiti SC", "WenQuanYi Micro Hei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* 无障碍：仅供读屏器读取 */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ===== 首屏启动层 ===== */
+/* 首屏加载页 */
+.boot-loader {
+    /* 启动层覆盖整个视口，在 React 尚未挂载时承担品牌露出与状态提示职责。 */
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #1C1B1F;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:
+        radial-gradient(ellipse at 20% 15%, rgba(103, 80, 164, 0.14), transparent 52%),
+        radial-gradient(ellipse at 80% 85%, rgba(103, 80, 164, 0.09), transparent 52%),
+        #FEF7FF;
+    opacity: 1;
+    transform: translateZ(0);
+    will-change: opacity, transform;
+}
+
+html.theme-dark .boot-loader,
+body.dark-theme .boot-loader {
+    color: #E6E1E5;
+    background:
+        radial-gradient(ellipse at 20% 15%, rgba(208, 188, 255, 0.13), transparent 52%),
+        radial-gradient(ellipse at 80% 85%, rgba(103, 80, 164, 0.18), transparent 52%),
+        #141218;
+}
+
+#loading-skeleton.is-exiting {
+    opacity: 0;
+    transform: scale(0.985);
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.boot-loader__logo {
+    /* Logo 外壳带轻微浮动动画，用于缓解静态等待时的“卡住感”。 */
+    width: 80px;
+    height: 80px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(103, 80, 164, 0.08);
+    border: 1px solid rgba(103, 80, 164, 0.18);
+    box-shadow: 0 4px 24px rgba(103, 80, 164, 0.12);
+    overflow: hidden;
+    animation: boot-loader-float 2.4s ease-in-out infinite;
+    will-change: transform;
+}
+
+.boot-loader__logo img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+html.theme-dark .boot-loader__logo,
+body.dark-theme .boot-loader__logo {
+    background: rgba(208, 188, 255, 0.08);
+    border-color: rgba(208, 188, 255, 0.15);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.boot-loader__title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: 0.01em;
+    color: #1C1B1F;
+}
+
+html.theme-dark .boot-loader__title,
+body.dark-theme .boot-loader__title {
+    color: #E6E1E5;
+}
+
+.boot-loader__subtitle {
+    font-size: 13px;
+    color: #49454F;
+    margin-bottom: 28px;
+}
+
+html.theme-dark .boot-loader__subtitle,
+body.dark-theme .boot-loader__subtitle {
+    color: #CAC4D0;
+}
+
+.boot-loader__progress {
+    /* 进度条不反映真实百分比，只承担“系统仍在工作”的感知反馈。 */
+    width: min(260px, 68vw);
+    height: 3px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(103, 80, 164, 0.12);
+    contain: paint;
+}
+
+html.theme-dark .boot-loader__progress,
+body.dark-theme .boot-loader__progress {
+    background: rgba(208, 188, 255, 0.12);
+}
+
+.boot-loader__progress-bar {
+    height: 100%;
+    width: 42%;
+    border-radius: 999px;
+    background: linear-gradient(90deg,
+        rgba(103, 80, 164, 0.25) 0%,
+        rgba(103, 80, 164, 0.85) 50%,
+        rgba(103, 80, 164, 0.25) 100%);
+    animation: boot-loader-progress 1.45s ease-in-out infinite;
+    will-change: transform;
+    transform: translate3d(-110%, 0, 0) scaleX(0.35);
+}
+
+html.theme-dark .boot-loader__progress-bar,
+body.dark-theme .boot-loader__progress-bar {
+    background: linear-gradient(90deg,
+        rgba(208, 188, 255, 0.2) 0%,
+        rgba(208, 188, 255, 0.9) 50%,
+        rgba(208, 188, 255, 0.2) 100%);
+}
+
+/* 首屏 logo 呼吸浮动动画。 */
+@keyframes boot-loader-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-7px); }
+}
+
+/* 首屏进度条往返扫光动画。 */
+@keyframes boot-loader-progress {
+    0% { transform: translate3d(-110%, 0, 0) scaleX(0.35); }
+    50% { transform: translate3d(40%, 0, 0) scaleX(0.85); }
+    100% { transform: translate3d(220%, 0, 0) scaleX(0.35); }
+}
+
+/* ===== 通用材质与布局骨架 ===== */
+/* 磨砂玻璃效果 */
+.glass {
+    /* 该类可供需要独立套用玻璃材质的区域复用。 */
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+}
+
+/* 布局 */
+.app {
+    /* 整体采用“左侧导航 + 右侧主工作区”的桌面管理台结构。 */
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ===== 侧边栏导航区 ===== */
+/* 侧边栏 (左侧导航) */
+.sidebar {
+    /* 侧边栏固定宽度，使用玻璃材质与主内容区形成层次区隔。 */
+    width: 280px;
+    height: 100%;
+    background: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    border-right: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    padding: 32px 16px;
+    z-index: 50;
+}
+
+.sidebar-header {
+    padding: 0 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.sidebar-logo-img {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(103, 80, 164, 0.2);
+    object-fit: contain;
+}
+
+.nav-item {
+    /* 单个导航项在 hover / active 状态下通过背景与透明度强化当前定位。 */
+    padding: 14px 20px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    color: var(--md-sys-color-on-surface);
+    opacity: 0.8;
+    margin-bottom: 4px;
+}
+
+.nav-item:hover {
+    background: rgba(103, 80, 164, 0.08);
+    opacity: 1;
+}
+
+.nav-item.active {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    opacity: 1;
+    font-weight: 600;
+}
+
+/* ===== 顶栏与主内容区 ===== */
+/* 主内容区域 */
+.main-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+.top-bar {
+    /* 顶栏悬浮于内容区上方，使用伪元素实现半透明模糊遮罩。 */
+    height: var(--top-bar-height);
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: transparent;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.top-bar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(255, 255, 255, 0.68);
+    -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+body.dark-theme .top-bar::before {
+    background: rgba(20, 18, 24, 0.88);
+}
+
+.top-bar > * {
+    position: relative;
+    z-index: 1;
+}
+
+.main-content {
+    /* 顶部留出 top-bar 高度，避免内容滚动时被悬浮顶栏遮挡。 */
+    flex: 1;
+    overflow-y: auto;
+    padding: calc(var(--top-bar-height) + 16px) 24px 24px;
+    box-sizing: border-box;
+}
+
+/* ===== 仪表盘卡片与通用容器 ===== */
+/* 仪表盘卡片 (Bento 风格) */
+.dashboard-grid {
+    /* 12 栏网格为桌面端默认布局基础，状态页和任务页都在此之上做跨度分配。 */
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+}
+
+.card {
+    /* card 是管理端最常见的视觉容器：统一圆角、边框、阴影和悬浮反馈。 */
+    background: var(--md-sys-color-surface);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 为主要业务卡片提供统一的入场动画，减少页面首次渲染时的生硬感。 */
+.status-panel-card,
+.tasks-summary-card,
+.task-card-enhanced,
+.status-timer-card,
+.status-timer-section-block,
+.tasks-empty-card,
+.status-timers-empty-card {
+    animation: card-fade-up 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.status-panel-card:nth-child(1),
+.task-card-enhanced:nth-child(1),
+.status-timer-card:nth-child(1),
+.status-timer-section-block:nth-child(1) {
+    animation-delay: 0.02s;
+}
+
+.status-panel-card:nth-child(2),
+.task-card-enhanced:nth-child(2),
+.status-timer-card:nth-child(2),
+.status-timer-section-block:nth-child(2) {
+    animation-delay: 0.06s;
+}
+
+.status-panel-card:nth-child(3),
+.task-card-enhanced:nth-child(3),
+.status-timer-card:nth-child(3),
+.status-timer-section-block:nth-child(3) {
+    animation-delay: 0.1s;
+}
+
+.status-panel-card:nth-child(n+4),
+.task-card-enhanced:nth-child(n+4),
+.status-timer-card:nth-child(n+4),
+.status-timer-section-block:nth-child(n+4) {
+    animation-delay: 0.14s;
+}
+
+/* ===== 配置页容器 ===== */
+/* 配置页面专用卡片样式 - 固定高度，内部滚动 */
+.config-card {
+    /* 配置页需要长表单滚动，因此外层卡片固定高度、内部区域自行滚动。 */
+    height: calc(100vh - var(--top-bar-height) - 40px); /* 视口高度减去顶部栏和底部边距 */
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important; /*以此接管padding控制*/
+    overflow: hidden;
+}
+
+.config-header {
+    /* 配置头部固定在卡片顶部，确保模式切换、提示信息和标题不随表单滚走。 */
+    padding: 20px 24px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+}
+
+body.dark-theme .config-header {
+    background: rgba(20, 18, 24, 0.8); /* 增加不透明度，减弱透底亮度 */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px 0 rgba(103, 80, 164, 0.12);
+}
+
+/* Bento 跨列：供各页面按 12 栏系统快速声明卡片宽度。 */
+.span-4 { grid-column: span 4; }
+.span-8 { grid-column: span 8; }
+.span-12 { grid-column: span 12; }
+
+/* 状态徽章 */
+.badge {
+    padding: 4px 12px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-success { background: #dcfce7; color: #166534; }
+.badge-error { background: #fee2e2; color: #991b1b; }
+
+/* ===== 通用按钮与交互控件 ===== */
+/* 按钮 */
+.btn {
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: var(--md-sys-color-primary);
+    color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+/* 通用操作按钮样式 */
+.btn-action {
+    width: 100%;
+    background: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 12px 16px;
+    line-height: 1.5;
+    cursor: pointer;
+}
+
+.btn-action span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-action:hover {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    border-color: var(--md-sys-color-outline-variant);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.btn-action:active {
+    transform: translateY(0);
+    box-shadow: none;
+    opacity: 0.8;
+}
+
+/* 暗色模式下的按钮覆盖样式 */
+body.dark-theme .btn-action {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+body.dark-theme .btn-action:hover {
+    background: rgba(208, 188, 255, 0.15);
+    color: var(--md-sys-color-primary);
+    border-color: rgba(208, 188, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== 滚动行为与兼容辅助类 ===== */
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--md-sys-color-secondary-container);
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--md-sys-color-secondary); }
+
+/* 移动端滚动优化 */
+.sidebar > div:nth-child(2),
+.main-content {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+}
+
+/* 按钮点击反馈 */
+.nav-item,
+.btn,
+.btn-action {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+
+.nav-item:active,
+.btn:active {
+    opacity: 0.7;
+    transition: opacity 0.1s;
+}
+
+/* 兼容之前的组件辅助样式 */
+.mono {
+    font-family: "Consolas", "SFMono-Regular", monospace;
+    font-size: 12px;
+}
+.grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+/* ===== 顶栏组件样式：时钟、连接状态、侧栏操作区 ===== */
+.header-clock-chip {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-surface-variant);
+    padding: 6px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.header-clock-label {
+    font-size: 14px;
+    opacity: 0.8;
+    font-weight: 600;
+}
+
+.header-clock-value {
+    font-family: Monaco, Consolas, "Courier New", monospace;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+
+.connection-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+}
+
+.connection-chip.is-connected {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.2);
+}
+
+.connection-chip.is-disconnected {
+    background: rgba(244, 67, 54, 0.1);
+    border-color: rgba(244, 67, 54, 0.2);
+}
+
+.connection-chip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.connection-chip.is-connected .connection-chip-dot {
+    background: #4CAF50;
+    box-shadow: 0 0 8px #4CAF50;
+}
+
+.connection-chip.is-disconnected .connection-chip-dot {
+    background: #F44336;
+    box-shadow: 0 0 8px #F44336;
+}
+
+.connection-chip-text {
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+
+.connection-chip.is-connected .connection-chip-text {
+    color: #4CAF50;
+}
+
+.connection-chip.is-disconnected .connection-chip-text {
+    color: #F44336;
+}
+
+.sidebar-actions-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.sidebar-action-btn {
+    width: 100%;
+    margin-bottom: 0;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--md-sys-color-on-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 12px;
+    box-shadow: none;
+    line-height: 1.2;
+}
+
+.sidebar-action-btn:hover {
+    transform: none;
+    box-shadow: none;
+    background: rgba(103, 80, 164, 0.08);
+    color: var(--md-sys-color-on-surface);
+}
+
+body.dark-theme .sidebar-action-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+body.dark-theme .sidebar-action-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--md-sys-color-on-surface);
+}
+
+.sidebar-github-card {
+    display: block;
+}
+
+.sidebar-github-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    cursor: pointer;
+}
+
+body.dark-theme .sidebar-github-inner {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-github-inner:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--glass-shadow);
+}
+
+.sidebar-github-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow: hidden;
+}
+
+.sidebar-github-author {
+    font-weight: 700 !important;
+    color: inherit !important;
+    font-size: 0.75rem !important;
+    line-height: 1.2 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    max-width: 170px;
+}
+
+.sidebar-github-meta {
+    display: block !important;
+    opacity: 0.6;
+    line-height: 1.2 !important;
+    font-size: 0.7rem !important;
+    color: inherit !important;
+}
+
+/* ===== 状态页：概览卡片与计时器可视化 ===== */
+.proactive-status-grid {
+    align-items: stretch;
+}
+
+.status-panel-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 332px;
+}
+
+.status-panel-card-primary {
+    background:
+        linear-gradient(180deg, rgba(59, 130, 246, 0.06), transparent 50%),
+        var(--md-sys-color-surface);
+}
+
+.status-panel-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+}
+
+.status-panel-icon-blue { background: rgba(59, 130, 246, 0.1); }
+.status-panel-icon-purple { background: rgba(168, 85, 247, 0.12); }
+.status-panel-icon-pink { background: rgba(236, 72, 153, 0.1); }
+
+.status-metric-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+    justify-content: center;
+}
+
+.status-metric-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+}
+
+.status-metric-label {
+    opacity: 0.72;
+    font-weight: 500 !important;
+}
+
+.status-metric-value {
+    font-weight: 600 !important;
+    text-align: right;
+}
+
+.status-metric-value.is-emphasize {
+    font-weight: 800 !important;
+}
+
+.status-metric-value.is-success {
+    color: #2E7D32;
+}
+
+.status-metric-value.is-error {
+    color: #C62828;
+}
+
+.status-divider {
+    height: 1px;
+    background: var(--md-sys-color-outline-variant);
+}
+
+.status-actions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    justify-content: center;
+}
+
+.status-action-tooltip-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.status-action-tooltip-bubble {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 10px);
+    transform: translateX(-50%) translateY(6px);
+    width: max-content;
+    max-width: min(92vw, 460px);
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(28, 27, 31, 0.92);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
+    white-space: normal;
+    word-break: keep-all;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+    z-index: 12;
+}
+
+.status-action-tooltip-bubble::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    transform: translateX(-50%);
+    border-width: 6px 6px 0 6px;
+    border-style: solid;
+    border-color: rgba(28, 27, 31, 0.92) transparent transparent transparent;
+}
+
+.status-action-tooltip-wrap:hover .status-action-tooltip-bubble,
+.status-action-tooltip-wrap:focus-within .status-action-tooltip-bubble {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+body.dark-theme .status-action-tooltip-bubble {
+    background: rgba(245, 244, 248, 0.96);
+    color: #1C1B1F;
+    border-color: rgba(28, 27, 31, 0.08);
+}
+
+body.dark-theme .status-action-tooltip-bubble::after {
+    border-color: rgba(245, 244, 248, 0.96) transparent transparent transparent;
+}
+
+
+.status-timers-section {
+    /* 计时器区域采用“分区 + 卡片网格”的结构，便于区分群沉默与自动触发。 */
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.status-timers-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+.status-timer-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.status-timer-section-block {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.status-timer-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.status-timer-section-title {
+    font-weight: 800 !important;
+}
+
+.status-timer-section-desc {
+    opacity: 0.72;
+    margin-top: 4px !important;
+}
+
+.status-timer-section-count {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-variant);
+    border: 1px solid var(--glass-border);
+    color: var(--md-sys-color-primary);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.status-timer-section-empty {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(103, 80, 164, 0.05);
+    border: 1px dashed rgba(103, 80, 164, 0.18);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 13px;
+}
+
+.status-timers-empty-card {
+    text-align: center;
+    padding: 44px 24px;
+}
+
+.status-timers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 18px;
+}
+
+.status-timer-card {
+    /* 单张计时器卡片负责展示一个会话当前最值得关注的计时状态。 */
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 312px;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    border-top: 4px solid transparent;
+}
+
+.status-timer-card::after {
+    content: '';
+    position: absolute;
+    inset: auto -26px -38px auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(103, 80, 164, 0.10), transparent 70%);
+    pointer-events: none;
+}
+
+.status-timer-card.accent-group-silence {
+    border-top-color: #2563EB;
+    background:
+        linear-gradient(180deg, rgba(59, 130, 246, 0.06), transparent 30%),
+        var(--md-sys-color-surface);
+}
+
+.status-timer-card.accent-auto-group {
+    border-top-color: #8B5CF6;
+    background:
+        linear-gradient(180deg, rgba(139, 92, 246, 0.07), transparent 30%),
+        var(--md-sys-color-surface);
+}
+
+.status-timer-card.accent-auto-friend {
+    border-top-color: #EC4899;
+    background:
+        linear-gradient(180deg, rgba(236, 72, 153, 0.07), transparent 30%),
+        var(--md-sys-color-surface);
+}
+
+.status-timer-card.is-urgent {
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.status-timer-card.is-expired {
+    border-color: rgba(244, 67, 54, 0.28);
+}
+
+.status-timer-card-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.status-timer-title-block {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.status-timer-kicker {
+    display: block !important;
+    margin-bottom: 4px !important;
+    opacity: 0.6;
+}
+
+.status-timer-session {
+    font-weight: 700 !important;
+    word-break: break-all;
+    font-size: 13px !important;
+    line-height: 1.4;
+}
+
+.status-timer-session.is-primary {
+    font-size: 28px !important;
+    letter-spacing: -0.2px;
+    line-height: 1.25;
+}
+
+.status-timer-session-sub {
+    display: block !important;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.72;
+    font-size: 12px !important;
+}
+
+.status-timer-chip-stack {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    max-width: 220px;
+    flex-shrink: 0;
+}
+
+.status-timer-kind-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+.status-timer-kind-badge.accent-group-silence {
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563EB;
+    border-color: rgba(59, 130, 246, 0.18);
+}
+
+.status-timer-kind-badge.accent-auto-group {
+    background: rgba(139, 92, 246, 0.12);
+    color: #7C3AED;
+    border-color: rgba(139, 92, 246, 0.18);
+}
+
+.status-timer-kind-badge.accent-auto-friend {
+    background: rgba(236, 72, 153, 0.12);
+    color: #DB2777;
+    border-color: rgba(236, 72, 153, 0.18);
+}
+
+.status-timer-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.status-timer-category-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    background: rgba(103, 80, 164, 0.08);
+    color: var(--md-sys-color-primary);
+}
+
+.status-timer-reset-hint {
+    /* 当群沉默计时器被新消息重置时，短暂显示顶部提示帮助用户理解时间跳变。 */
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    right: 16px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(240, 246, 255, 0.84);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.12);
+    color: #2563EB;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.4;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+    animation: status-reset-hint-fade 4.2s ease-out forwards;
+}
+
+body.dark-theme .status-timer-reset-hint {
+    background: rgba(30, 58, 138, 0.95);
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    color: #93C5FD;
+}
+
+.status-timer-reset-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #2563EB;
+    box-shadow: 0 0 0 rgba(37, 99, 235, 0.35);
+    animation: status-reset-dot-pulse 1.4s ease-out infinite;
+    flex-shrink: 0;
+}
+
+.status-timer-card.is-resetting {
+    border-color: rgba(59, 130, 246, 0.28);
+    box-shadow: 0 12px 32px rgba(59, 130, 246, 0.12);
+}
+
+.status-timer-panel {
+    background: var(--md-sys-color-surface-variant);
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(103, 80, 164, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.status-timer-primary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.status-timer-label {
+    display: block !important;
+    margin-bottom: 4px !important;
+    opacity: 0.68;
+}
+
+.status-timer-countdown {
+    font-weight: 800 !important;
+    color: var(--md-sys-color-primary);
+}
+
+.status-timer-progress-value {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.status-timer-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.status-timer-info-item {
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.42);
+    border: 1px solid var(--glass-border);
+}
+
+body.dark-theme .status-timer-info-item {
+    background: rgba(255,255,255,0.04);
+}
+
+.status-timer-info-label {
+    display: block !important;
+    margin-bottom: 6px !important;
+    opacity: 0.68;
+}
+
+.status-timer-info-value {
+    font-weight: 600 !important;
+    line-height: 1.45 !important;
+    word-break: break-word;
+}
+
+.status-timer-info-value.is-emphasize {
+    font-weight: 800 !important;
+}
+
+/* ===== 任务页：任务卡片与调度进度 ===== */
+.tasks-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.tasks-header-subtitle {
+    opacity: 0.72;
+}
+
+.tasks-empty-card {
+    text-align: center;
+    padding: 48px 24px;
+}
+
+.tasks-empty-icon {
+    font-size: 34px;
+    margin-bottom: 12px;
+}
+
+.tasks-grid-enhanced {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 18px;
+}
+
+.task-card-enhanced {
+    /* 任务卡片与状态页卡片风格保持一致，但更强调执行时间与操作按钮区域。 */
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 320px;
+    position: relative;
+    overflow: hidden;
+}
+
+.task-card-enhanced::after {
+    content: '';
+    position: absolute;
+    inset: auto -30px -40px auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(103, 80, 164, 0.10), transparent 70%);
+    pointer-events: none;
+}
+
+.task-card-enhanced.is-urgent {
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.task-card-enhanced.is-expired {
+    border-color: rgba(244, 67, 54, 0.28);
+}
+
+.task-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.task-card-title-block {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.task-card-kicker {
+    display: block !important;
+    margin-bottom: 4px !important;
+    opacity: 0.6;
+}
+
+.task-card-session {
+    font-weight: 700 !important;
+    word-break: break-all;
+    font-size: 13px !important;
+    line-height: 1.4;
+}
+
+.task-card-session.is-primary {
+    font-size: 28px !important;
+    letter-spacing: -0.2px;
+    line-height: 1.25;
+}
+
+.task-card-session-sub {
+    display: block !important;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.72;
+    font-size: 12px !important;
+}
+
+.task-next-run-panel {
+    background: var(--md-sys-color-surface-variant);
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(103, 80, 164, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.task-next-run-primary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.task-next-run-label {
+    display: block !important;
+    margin-bottom: 4px !important;
+    opacity: 0.68;
+}
+
+.task-next-run-time {
+    font-weight: 800 !important;
+    color: var(--md-sys-color-primary);
+}
+
+.task-countdown-text {
+    opacity: 0.82;
+}
+
+.task-status-pill {
+    /* 用统一的状态 pill 表达 future / soon / urgent / expired 等时序语义。 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.task-status-pill.is-future {
+    background: rgba(103, 80, 164, 0.14);
+    color: var(--md-sys-color-primary);
+}
+
+.task-status-pill.is-soon {
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563EB;
+}
+
+.task-status-pill.is-urgent {
+    background: rgba(245, 158, 11, 0.16);
+    color: #B45309;
+}
+
+.task-status-pill.is-expired,
+.task-status-pill.is-unknown {
+    background: rgba(244, 67, 54, 0.14);
+    color: #C62828;
+}
+
+.task-progress-track {
+    /* 任务与计时器共用同一套进度条视觉语言，降低界面认知成本。 */
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(103, 80, 164, 0.12);
+    overflow: hidden;
+}
+
+.task-progress-bar {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #6750A4, #8B5CF6);
+    transition: width 0.6s ease;
+}
+
+.task-progress-bar.is-soon {
+    background: linear-gradient(90deg, #3B82F6, #60A5FA);
+}
+
+.task-progress-bar.is-urgent {
+    background: linear-gradient(90deg, #F59E0B, #F97316);
+}
+
+.task-progress-bar.is-expired,
+.task-progress-bar.is-unknown {
+    background: linear-gradient(90deg, #EF4444, #F87171);
+}
+
+/* ===== 响应式断点设计 ===== */
+/* ========== 响应式设计 ========== */
+
+/* 平板设备：缩窄侧边栏、把 12 栏压缩为 6 栏，兼顾内容密度与可读性。 */
+@media (max-width: 1024px) {
+    .sidebar {
+        width: 240px;
+    }
+
+    .top-bar {
+        padding: 0 24px;
+    }
+
+    .main-content {
+        padding: calc(var(--top-bar-height) + 16px) 24px 24px;
+    }
+
+    .dashboard-grid {
+        gap: 16px;
+        grid-template-columns: repeat(6, 1fr);
+    }
+    
+    .span-4 { grid-column: span 3; }
+    .span-8 { grid-column: span 6; }
+    .span-12 { grid-column: span 6; }
+
+    .card {
+        padding: 20px;
+    }
+}
+
+/* 移动设备：整体从左右分栏切换为上下堆叠，导航改为横向可滚动。 */
+@media (max-width: 768px) {
+    .app {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .sidebar {
+        width: 100%;
+        height: auto;
+        padding: 12px 16px;
+        border-right: none;
+        border-bottom: 1px solid var(--glass-border);
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .sidebar-header {
+        padding: 0;
+        flex-direction: row;
+        justify-content: space-between;
+        width: 100%;
+    }
+
+    .sidebar-logo-img {
+        width: 40px;
+        height: 40px;
+    }
+
+    .sidebar > div:nth-child(2) {
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        margin: 0 !important;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .nav-item {
+        white-space: nowrap;
+        padding: 10px 16px;
+        margin-bottom: 0;
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+
+    .sidebar > div:nth-child(3) {
+        display: none;
+    }
+
+    .top-bar {
+        position: relative;
+        top: auto;
+        left: auto;
+        right: auto;
+        height: auto;
+        min-height: calc(var(--top-bar-height) * 0.75);
+        padding: 12px 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .top-bar::before {
+        display: none;
+    }
+
+    .top-bar > h5 {
+        font-size: 1.25rem;
+    }
+
+    .main-wrapper {
+        flex: 1;
+        overflow: visible;
+    }
+
+    .main-content {
+        padding: 16px;
+        overflow-y: visible;
+        height: auto;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr !important;
+        gap: 12px;
+    }
+
+    .span-4, .span-8, .span-12 {
+        grid-column: span 1 !important;
+    }
+
+    .card {
+        padding: 16px;
+        border-radius: var(--radius-md);
+    }
+
+    .card:hover {
+        transform: none;
+    }
+
+    .top-bar > div {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .tasks-header-row,
+    .status-timer-section-head {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .status-timer-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .status-panel-card {
+        min-height: auto;
+    }
+
+    .tasks-grid-enhanced {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 小屏手机：进一步压缩边距与卡片留白，保证信息仍能在窄屏完整呈现。 */
+@media (max-width: 480px) {
+    .sidebar {
+        padding: 10px 12px;
+    }
+
+    .sidebar-header {
+        gap: 8px;
+    }
+
+    .sidebar-logo-img {
+        width: 36px;
+        height: 36px;
+    }
+
+    .nav-item {
+        padding: 8px 14px;
+        font-size: 13px;
+    }
+
+    .top-bar {
+        padding: 10px 12px;
+        min-height: 56px;
+    }
+
+    .main-content {
+        padding: 12px;
+    }
+
+    .card {
+        padding: 14px;
+    }
+
+    .header-clock-chip,
+    .connection-chip {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .task-next-run-primary-row,
+    .task-card-top,
+    .status-timer-primary-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .status-timer-card-top {
+        grid-template-columns: 1fr;
+    }
+
+    .status-timer-chip-stack {
+        justify-content: flex-start;
+        max-width: none;
+    }
+
+    .status-action-tooltip-bubble {
+        left: 0;
+        transform: translateX(0) translateY(6px);
+        width: 100%;
+        max-width: none;
+        text-align: left;
+    }
+
+    .status-action-tooltip-bubble::after {
+        left: 22px;
+        transform: none;
+    }
+
+    .status-action-tooltip-wrap:hover .status-action-tooltip-bubble,
+    .status-action-tooltip-wrap:focus-within .status-action-tooltip-bubble {
+        transform: translateX(0) translateY(0);
+    }
+}
+
+/* 超小屏幕：针对极窄设备继续缩小导航与容器 padding。 */
+@media (max-width: 360px) {
+    .sidebar {
+        padding: 8px 10px;
+    }
+
+    .sidebar-logo-img {
+        width: 32px;
+        height: 32px;
+    }
+
+    .nav-item {
+        padding: 7px 12px;
+        font-size: 12px;
+    }
+
+    .top-bar {
+        padding: 8px 10px;
+    }
+
+    .main-content {
+        padding: 10px;
+    }
+
+    .card {
+        padding: 12px;
+    }
+}
+
+/* ===== 动画、骨架屏与低动态偏好兼容 ===== */
+/* ========== 骨架屏动画 ========== */
+@keyframes card-fade-up {
+    0% {
+        opacity: 0;
+        transform: translateY(10px) scale(0.985);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.skeleton {
+    /* skeleton 类可为未来异步区域提供统一的闪烁占位样式。 */
+    background: linear-gradient(
+        90deg,
+        var(--md-sys-color-surface-variant) 0%,
+        rgba(var(--md-sys-color-on-surface-variant-rgb, 73, 69, 79), 0.15) 50%,
+        var(--md-sys-color-surface-variant) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+    will-change: background-position;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* 群沉默重置提示中的小圆点脉冲动画。 */
+@keyframes status-reset-dot-pulse {
+    0% {
+        transform: scale(0.9);
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.34);
+    }
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
+    }
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+    }
+}
+
+/* 群沉默重置提示条的淡入停留淡出动画。 */
+@keyframes status-reset-hint-fade {
+    0% {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.98);
+    }
+    10% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    82% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.985);
+    }
+}
+
+body.dark-theme .skeleton,
+html.theme-dark .skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--md-sys-color-surface-variant) 0%,
+        rgba(202, 196, 208, 0.15) 50%,
+        var(--md-sys-color-surface-variant) 100%
+    );
+    background-size: 200% 100%;
+}
+
+/* 尊重系统“减少动态效果”偏好，关闭高频动画，提升无障碍体验。 */
+@media (prefers-reduced-motion: reduce) {
+    .boot-loader__logo,
+    .boot-loader__progress-bar,
+    .skeleton,
+    .status-timer-reset-dot,
+    .status-timer-reset-hint,
+    .status-panel-card,
+    .tasks-summary-card,
+    .task-card-enhanced,
+    .status-timer-card,
+    .status-timer-section-block,
+    .tasks-empty-card,
+    .status-timers-empty-card {
+        animation: none !important;
+    }
+
+    #loading-skeleton.is-exiting {
+        transition: opacity 0.15s linear !important;
+        transform: none !important;
+    }
+
+    .boot-loader__progress-bar {
+        transform: translate3d(0, 0, 0) scaleX(1);
+    }
+}

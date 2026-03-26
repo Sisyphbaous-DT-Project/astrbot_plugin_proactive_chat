@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import copy
+
 from astrbot.api import logger
 
 
@@ -12,6 +14,7 @@ class ConfigMixin:
     """配置读取与验证混入类。"""
 
     config: dict
+    session_override_manager: any
 
     async def _validate_config(self) -> None:
         """验证插件配置的完整性和有效性"""
@@ -52,9 +55,14 @@ class ConfigMixin:
             raise
 
     def _get_session_config(self, session_id: str) -> dict | None:
-        """
-        根据会话 UMO 获取对应配置。仅使用全局配置 + session_list。
-        """
+        """根据会话 UMO 获取最终生效配置（base + override）。"""
+        base = self._get_base_session_config(session_id)
+        if not base:
+            return None
+        return self._build_effective_config(session_id, base)
+
+    def _get_base_session_config(self, session_id: str) -> dict | None:
+        """获取仅由全局配置与会话命中规则决定的基础配置。"""
         parsed = self._parse_session_id(session_id)
         if not parsed:
             return None
@@ -73,6 +81,32 @@ class ConfigMixin:
             )
         return None
 
+    def _build_effective_config(
+        self, session_id: str, base_config: dict | None
+    ) -> dict | None:
+        """将会话差异补丁合并到基础配置，返回最终生效配置。"""
+        if not base_config:
+            return None
+
+        manager = getattr(self, "session_override_manager", None)
+        if not manager:
+            return base_config
+
+        normalized_session_id = self._normalize_session_id(session_id)
+        effective = manager.get_effective(normalized_session_id, base_config)
+
+        if isinstance(effective, dict):
+            # 保留运行时元信息，避免被白名单过滤丢失
+            effective["_session_type"] = base_config.get("_session_type")
+            effective["_from_session_list"] = base_config.get(
+                "_from_session_list", False
+            )
+            effective["_has_override"] = bool(
+                manager.get_override(normalized_session_id)
+            )
+
+        return effective
+
     def _get_typed_session_config(
         self, session_id: str, target_id: str, settings_key: str, session_type: str
     ) -> dict | None:
@@ -81,11 +115,14 @@ class ConfigMixin:
         if not settings.get("enable", False):
             return None
 
-        # 命中规则：支持完整 UMO 或纯 target_id 两种写法
+        # 命中规则：支持完整 UMO、规范化 UMO 或纯 target_id 三种写法
         session_list = settings.get("session_list", [])
-        if session_id in session_list or target_id in session_list:
-            # 返回副本，避免调用方意外修改全局配置对象
-            config_copy = settings.copy()
+        normalized_session_id = self._normalize_session_id(session_id)
+        candidates = {session_id, normalized_session_id, target_id}
+
+        if any(candidate in session_list for candidate in candidates):
+            # 返回深拷贝，避免调用方意外修改全局配置对象
+            config_copy = copy.deepcopy(settings)
             config_copy["_session_type"] = session_type
             config_copy["_from_session_list"] = True
             return config_copy

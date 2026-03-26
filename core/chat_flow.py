@@ -92,7 +92,8 @@ class ProactiveCoreMixin:
                 )
                 # 私聊采用配置区间内随机间隔，减少触发规律性
                 random_interval = random.randint(min_interval, max_interval)
-                next_trigger_time = time.time() + random_interval
+                scheduled_at = time.time()
+                next_trigger_time = scheduled_at + random_interval
                 run_date = datetime.fromtimestamp(next_trigger_time, tz=self.timezone)
 
                 self.scheduler.add_job(
@@ -105,8 +106,13 @@ class ProactiveCoreMixin:
                     misfire_grace_time=60,
                 )
 
-                self.session_data.setdefault(session_id, {})["next_trigger_time"] = (
-                    next_trigger_time
+                session_payload = self.session_data.setdefault(session_id, {})
+                session_payload["next_trigger_time"] = next_trigger_time
+                session_payload["last_scheduled_at"] = scheduled_at
+                session_payload["last_schedule_min_interval_seconds"] = min_interval
+                session_payload["last_schedule_max_interval_seconds"] = max_interval
+                session_payload["last_schedule_random_interval_seconds"] = (
+                    random_interval
                 )
                 logger.info(
                     f"[主动消息] 已为 {self._get_session_log_str(session_id, session_config)} 安排下一次主动消息喵，时间：{run_date.strftime('%Y-%m-%d %H:%M:%S')} 喵。"

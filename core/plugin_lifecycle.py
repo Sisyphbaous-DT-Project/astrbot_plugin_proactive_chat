@@ -25,6 +25,7 @@ class LifecycleMixin:
     auto_trigger_timers: dict[str, asyncio.TimerHandle]
     data_dir: any
     session_data_file: any
+    web_admin_server: any
 
     async def initialize(self) -> None:
         """插件的异步初始化函数。"""
@@ -92,6 +93,13 @@ class LifecycleMixin:
         await self._setup_auto_triggers_for_enabled_sessions()
         logger.info("[主动消息] 自动主动消息触发器初始化完成喵。")
 
+        # 启动 Web 管理端
+        try:
+            if self.web_admin_server:
+                await self.web_admin_server.start()
+        except Exception as e:
+            logger.error(f"[主动消息] Web 管理端启动失败喵: {e}")
+
     async def terminate(self) -> None:
         """插件被卸载或停用时调用的清理函数。"""
         logger.info("[主动消息] 收到插件终止指令，开始清理资源喵。")
@@ -151,6 +159,13 @@ class LifecycleMixin:
                     logger.info("[主动消息] 会话数据已保存喵。")
                 except Exception as e:
                     logger.error(f"[主动消息] 保存数据时出错喵: {e}")
+
+            # 停止 Web 管理端
+            if self.web_admin_server:
+                try:
+                    await self.web_admin_server.stop()
+                except Exception as e:
+                    logger.warning(f"[主动消息] 停止 Web 管理端时出错喵: {e}")
         finally:
             # 确保终止日志一定输出
             logger.info("[主动消息] 主动消息插件已终止喵。")

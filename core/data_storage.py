@@ -68,6 +68,10 @@ class StorageMixin:
             "last_message_time",
             "unanswered_count",
             "next_trigger_time",
+            "last_scheduled_at",
+            "last_schedule_min_interval_seconds",
+            "last_schedule_max_interval_seconds",
+            "last_schedule_random_interval_seconds",
         ]:
             if key not in incoming:
                 continue

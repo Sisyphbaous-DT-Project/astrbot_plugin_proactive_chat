@@ -488,7 +488,8 @@ class SchedulerMixin:
                 min_interval, int(schedule_conf.get("max_interval_minutes", 900)) * 60
             )
             random_interval = random.randint(min_interval, max_interval)
-            next_trigger_time = time.time() + random_interval
+            scheduled_at = time.time()
+            next_trigger_time = scheduled_at + random_interval
             run_date = datetime.fromtimestamp(next_trigger_time, tz=self.timezone)
 
             # 更新调度器与持久化数据
@@ -504,9 +505,12 @@ class SchedulerMixin:
                 misfire_grace_time=60,
             )
 
-            self.session_data.setdefault(normalized_session_id, {})[
-                "next_trigger_time"
-            ] = next_trigger_time
+            session_payload = self.session_data.setdefault(normalized_session_id, {})
+            session_payload["next_trigger_time"] = next_trigger_time
+            session_payload["last_scheduled_at"] = scheduled_at
+            session_payload["last_schedule_min_interval_seconds"] = min_interval
+            session_payload["last_schedule_max_interval_seconds"] = max_interval
+            session_payload["last_schedule_random_interval_seconds"] = random_interval
             logger.info(
                 f"[主动消息] 已为 {self._get_session_log_str(normalized_session_id, session_config)} 安排下一次主动消息喵，时间：{run_date.strftime('%Y-%m-%d %H:%M:%S')} 喵。"
             )
@@ -540,6 +544,9 @@ class SchedulerMixin:
                 # 若计时器已被重置则跳过
                 if captured_session_id not in self.group_timers:
                     return
+
+                # 先移除当前已触发的句柄，避免状态页继续把它识别为“仍在运行的群沉默计时器”
+                del self.group_timers[captured_session_id]
 
                 # 确保会话数据存在
                 if captured_session_id not in self.session_data:
