@@ -356,16 +356,8 @@ class WebAdminServer:
         @self.app.get("/api/notifications")
         async def get_notifications():
             # 通知列表统一从插件本地缓存读取，前端不直接访问外部通知平台。
-            if not getattr(self.plugin, "notification_center", None):
-                return {
-                    "items": [],
-                    "meta": {
-                        "unread_count": 0,
-                        "last_sync_at": None,
-                        "total_count": 0,
-                    },
-                }
-            return await self.plugin.notification_center.get_payload()
+            # 复用统一的通知载荷构造函数，确保 HTTP 与 WebSocket 输出结构保持一致。
+            return await self._build_notification_payload()
 
         @self.app.post("/api/notifications/read")
         async def mark_notification_read(payload: dict[str, Any]):
@@ -374,6 +366,8 @@ class WebAdminServer:
                 return JSONResponse({"error": "通知系统不可用"}, status_code=503)
 
             notification_id = payload.get("id")
+            if notification_id is None:
+                return JSONResponse({"error": "缺少必填字段 id"}, status_code=400)
             try:
                 normalized_id = int(notification_id)
             except (TypeError, ValueError):

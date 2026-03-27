@@ -78,7 +78,9 @@ class NotificationCenter:
 
     async def _load_cache_locked(self) -> None:
         # 首次启动或尚未产生缓存文件时，直接使用空缓存结构。
-        if not await aio_os.path.exists(self.cache_file):
+        try:
+            await aio_os.stat(self.cache_file)
+        except FileNotFoundError:
             self._cache = {
                 "last_sync_at": None,
                 "items": [],
@@ -231,7 +233,8 @@ class NotificationCenter:
     def _items_signature(self, items: list[dict[str, Any]]) -> str:
         try:
             return json.dumps(items, ensure_ascii=False, sort_keys=True)
-        except Exception:
+        except TypeError as e:
+            logger.warning(f"[主动消息] 创建通知签名时遇到不可序列化的项喵: {e}")
             return str(items)
 
     def _build_meta_locked(self) -> dict[str, Any]:
