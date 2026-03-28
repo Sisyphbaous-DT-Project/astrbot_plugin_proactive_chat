@@ -5,202 +5,49 @@
 const { Box, Typography, Button, Chip } = MaterialUI;
 
 const NOTIFICATION_TYPE_META = {
+    // 不同类型通知映射到不同的 UI 标签与颜色语义，便于用户快速区分内容性质。
     UPDATE: { label: '更新通知', color: 'info' },
     BUGFIX: { label: '修复通知', color: 'success' },
-    NOTICE: { label: '注意事项', color: 'warning' },
+    NOTICE: { label: '公告通知', color: 'warning' },
     SECURITY: { label: '安全通知', color: 'error' },
     TEST: { label: '测试通知', color: 'default' },
 };
 
+const NOTIFICATION_TYPE_ALIASES = {
+    // 兼容后端可能输出的别名类型，统一归并后再进入主映射表。
+    INFO: 'NOTICE',
+};
+
 function resolveNotificationTypeMeta(type) {
     const normalizedType = String(type || '').trim().toUpperCase();
-    return NOTIFICATION_TYPE_META[normalizedType] || { label: '其他通知', color: 'default' };
+    const canonicalType = NOTIFICATION_TYPE_ALIASES[normalizedType] || normalizedType;
+    // 即使类型未知，也返回兜底标签，避免前端因为类型缺失出现空白 chip。
+    return NOTIFICATION_TYPE_META[canonicalType] || { label: '其他通知', color: 'default' };
 }
 
 function renderNotificationContent(item) {
-    const rawContent = String(item?.content || '--');
-    const content = rawContent
-        .replace(/\\r\\n/g, '\n')
-        .replace(/\\n/g, '\n')
-        .replace(/\r\n?/g, '\n');
+    // 通知正文无论来自纯文本还是 Markdown，都先走统一内容规范化，避免换行格式不一致。
+    const content = window.MarkdownRenderUtil.normalizeMarkdownContent(item?.content || '--');
     const format = String(item?.content_format || 'text').trim().toLowerCase();
-
-    const markdownLike = /(^|\n)\s{0,3}(#{1,6}\s|>\s|[-*]\s)|(^|\n)\s*---\s*($|\n)/m.test(content);
-    const shouldRenderMarkdown = format === 'markdown' || markdownLike;
+    const shouldRenderMarkdown = format === 'markdown' || window.MarkdownRenderUtil.isProbablyMarkdown(content);
 
     if (!shouldRenderMarkdown) {
         return (
-            <Typography variant="body2" className="task-countdown-text notification-feed-content-text" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.85 }}>
+            <Typography
+                variant="body2"
+                className="task-countdown-text notification-feed-content-text notification-feed-content-text-plain"
+                sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.85 }}
+            >
                 {content}
             </Typography>
         );
     }
 
-    const escapeHtml = (text) => text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-
-    const safeLinkHref = (href) => {
-        const value = String(href || '').trim();
-        if (/^https?:\/\//i.test(value) || value.startsWith('/') || value.startsWith('#')) {
-            return value;
-        }
-        return '#';
-    };
-
-    const applyInlineMarkdown = (text) => {
-        let output = text;
-        output = output.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        output = output.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-        output = output.replace(/`([^`]+)`/g, '<code>$1</code>');
-        output = output.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
-            const safeHref = safeLinkHref(href);
-            return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${label}</a>`;
-        });
-        return output;
-    };
-
-    const fallbackRenderMarkdown = (md) => {
-        const normalized = String(md || '').replace(/\r\n?/g, '\n');
-        const lines = normalized.split('\n');
-        const htmlParts = [];
-        let paragraphBuffer = [];
-        let inList = false;
-
-        const flushParagraph = () => {
-            if (!paragraphBuffer.length) return;
-            const safeText = paragraphBuffer.map((line) => escapeHtml(line)).join('<br />');
-            htmlParts.push(`<p>${applyInlineMarkdown(safeText)}</p>`);
-            paragraphBuffer = [];
-        };
-
-        const closeList = () => {
-            if (!inList) return;
-            htmlParts.push('</ul>');
-            inList = false;
-        };
-
-        for (const rawLine of lines) {
-            const line = rawLine.trimEnd();
-            const trimmed = line.trim();
-
-            if (!trimmed) {
-                flushParagraph();
-                closeList();
-                continue;
-            }
-
-            const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
-            if (heading) {
-                flushParagraph();
-                closeList();
-                const level = heading[1].length;
-                htmlParts.push(`<h${level}>${applyInlineMarkdown(escapeHtml(heading[2]))}</h${level}>`);
-                continue;
-            }
-
-            if (/^---+$/.test(trimmed)) {
-                flushParagraph();
-                closeList();
-                htmlParts.push('<hr />');
-                continue;
-            }
-
-            const quote = trimmed.match(/^>\s?(.*)$/);
-            if (quote) {
-                flushParagraph();
-                closeList();
-                htmlParts.push(`<blockquote><p>${applyInlineMarkdown(escapeHtml(quote[1]))}</p></blockquote>`);
-                continue;
-            }
-
-            const listItem = trimmed.match(/^[-*]\s+(.+)$/);
-            if (listItem) {
-                flushParagraph();
-                if (!inList) {
-                    htmlParts.push('<ul>');
-                    inList = true;
-                }
-                htmlParts.push(`<li>${applyInlineMarkdown(escapeHtml(listItem[1]))}</li>`);
-                continue;
-            }
-
-            closeList();
-            paragraphBuffer.push(line);
-        }
-
-        flushParagraph();
-        closeList();
-
-        return htmlParts.join('');
-    };
-
-    let sanitizedHtml = '';
-    try {
-        const marked = window.marked;
-        const DOMPurify = window.DOMPurify;
-
-        if (marked && DOMPurify) {
-            const parseMarkdown = (md) => {
-                if (marked && typeof marked.parse === 'function') {
-                    return marked.parse(md, { gfm: true, breaks: true });
-                }
-                if (typeof marked === 'function') {
-                    return marked(md, { gfm: true, breaks: true });
-                }
-                throw new Error('marked parser unavailable');
-            };
-
-            const rawHtml = parseMarkdown(content);
-            const sanitizedFragment = DOMPurify.sanitize(rawHtml, {
-                USE_PROFILES: { html: true },
-                FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
-                FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover', 'onfocus'],
-                RETURN_DOM_FRAGMENT: true,
-            });
-
-            sanitizedFragment.querySelectorAll('a[href]').forEach((link) => {
-                const href = String(link.getAttribute('href') || '').trim();
-                if (!/^https?:\/\//i.test(href) && !href.startsWith('/') && !href.startsWith('#')) {
-                    link.setAttribute('href', '#');
-                }
-                link.setAttribute('target', '_blank');
-                link.setAttribute('rel', 'noopener noreferrer');
-            });
-
-            const container = document.createElement('div');
-            container.appendChild(sanitizedFragment);
-            sanitizedHtml = container.innerHTML;
-        } else {
-            sanitizedHtml = fallbackRenderMarkdown(content);
-        }
-    } catch (e) {
-        sanitizedHtml = fallbackRenderMarkdown(content);
-    }
-
     return (
         <Box
-            className="task-countdown-text notification-feed-content-text"
-            sx={{
-                lineHeight: 1.85,
-                '& p': { my: 0.8 },
-                '& ul, & ol': { pl: 2.5, my: 0.8 },
-                '& pre': { overflowX: 'auto' },
-                '& blockquote': {
-                    m: '8px 0',
-                    px: 1.5,
-                    py: 1,
-                    borderLeft: '4px solid var(--md-sys-color-primary)',
-                    background: 'rgba(103, 80, 164, 0.10)',
-                    borderRadius: '0 10px 10px 0',
-                    opacity: 1,
-                },
-                '& blockquote p': { m: 0 },
-            }}
-            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            className="task-countdown-text notification-feed-content-text notification-md"
+            // Markdown HTML 已在公共工具中做过 sanitize，这里只负责挂载结果。
+            dangerouslySetInnerHTML={{ __html: window.MarkdownRenderUtil.renderMarkdownToHtml(content) }}
         />
     );
 }
@@ -208,15 +55,18 @@ function renderNotificationContent(item) {
 function NotificationsView({ onRefresh }) {
     const { state, dispatch } = useAppContext();
     const api = useApi();
+    // 兜底保证渲染层始终拿到数组，避免 map 时出现空值异常。
     const notifications = Array.isArray(state.notifications) ? state.notifications : [];
     const notificationsMeta = state.notificationsMeta || { unread_count: 0, last_sync_at: '', total_count: 0 };
     const displayTimezone = state.config?.displayTimezone || 'Asia/Shanghai';
+    // busyAction 用单字符串标记当前进行中的动作，便于按钮粒度控制禁用状态。
     const [busyAction, setBusyAction] = React.useState('');
 
     const refreshFromServer = async () => {
         setBusyAction('refresh');
         try {
             const payload = await api.refreshNotifications();
+            // 先写回刷新接口直接返回的最新通知快照，再触发上层全量刷新补齐其它区域状态。
             dispatch({ type: 'SET_NOTIFICATIONS', payload: payload.items || [] });
             dispatch({ type: 'SET_NOTIFICATIONS_META', payload: payload.meta || null });
             await onRefresh();
@@ -234,6 +84,7 @@ function NotificationsView({ onRefresh }) {
             dispatch({ type: 'SET_NOTIFICATIONS_META', payload: payload.meta || null });
             dispatch({
                 type: 'SET_NOTIFICATIONS',
+                // 单条已读时直接在本地列表上做映射更新，避免为了一个按钮再整页重载。
                 payload: notifications.map((item) =>
                     Number(item.id) === Number(id) ? { ...item, _read: true } : item
                 ),
@@ -252,6 +103,7 @@ function NotificationsView({ onRefresh }) {
             dispatch({ type: 'SET_NOTIFICATIONS_META', payload: payload.meta || null });
             dispatch({
                 type: 'SET_NOTIFICATIONS',
+                // 全部已读时直接把当前列表统一标成已读，保证交互即时反馈。
                 payload: notifications.map((item) => ({ ...item, _read: true })),
             });
         } catch (e) {
@@ -283,6 +135,7 @@ function NotificationsView({ onRefresh }) {
                                         fontWeight: 700,
                                         lineHeight: 1,
                                         border: '1px solid',
+                                        // 未读状态通过暖色强调，全部已读则回落到绿色提示“状态良好”。
                                         borderColor: Number(notificationsMeta.unread_count ?? 0) > 0
                                             ? 'rgba(245, 158, 11, 0.28)'
                                             : 'rgba(46, 125, 50, 0.18)',
