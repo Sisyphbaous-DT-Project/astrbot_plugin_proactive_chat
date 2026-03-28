@@ -165,7 +165,12 @@ function MarkdownDocsView() {
                                             <button
                                                 key={item.path}
                                                 className={`markdown-docs-file-item ${isActive ? 'is-active' : ''}`}
-                                                onClick={() => loadMarkdownDocument(item.path)}
+                                                onClick={() => {
+                                                    if (isActive) {
+                                                        return;
+                                                    }
+                                                    loadMarkdownDocument(item.path);
+                                                }}
                                             >
                                                 <div className="markdown-docs-file-item-top">
                                                     <span className="markdown-docs-file-icon">📝</span>
