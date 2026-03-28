@@ -248,10 +248,9 @@
 
 从 v1.2.0 版本开始，插件已经重构为 **前端控制台 + 模块化后端核心** 的结构；在后续迭代中，又继续加入了 **通知系统** 与更完善的文档组织：
 
-- **前端 (`admin/`)**：提供独立 Web 管理端，负责运行状态展示、任务管理、配置编辑、通知中心与实时同步。
+- **前端 (`admin/`)**：提供独立 Web 管理端，负责运行状态展示、任务管理、通知中心、文档浏览、配置编辑与实时同步。
 - **后端核心 (`core/`)**：拆分为多个职责明确的模块，分别处理会话配置、调度、消息发送、上下文构建、持久化、通知同步与 Web 管理服务。
-- **文档目录 (`docs/`)**：用于存放与实现配套的接口规范、设计约定等开发文档。
-- **插件入口 (`main.py`)**：作为 AstrBot 插件主入口，负责组装各核心模块并对接 AstrBot 生命周期。
+- **根目录**：保留插件入口、配置结构、依赖声明与项目说明文档等关键文件。
 
 当前目录结构示例：
 
@@ -260,6 +259,20 @@ AstrBot/
 └─ data/
    └─ plugins/
       └─ astrbot_plugin_proactive_chat/
+         ├─ __init__.py                       # Python 包初始化文件，支持相对导入
+         ├─ .gitattributes                    # Git 属性配置
+         ├─ .gitignore                        # Git 忽略规则
+         ├─ _conf_schema.json                 # 插件配置定义
+         ├─ CHANGELOG.md                      # 插件更新日志，适用于 AstrBot v4.11.2+
+         ├─ CONTRIBUTING.md                   # 本插件的贡献指南
+         ├─ LICENSE                           # 许可证文件
+         ├─ logo.png                          # 插件 Logo，适用于 AstrBot v4.5.0+
+         ├─ main.py                           # 插件主入口文件，包含命令处理
+         ├─ metadata.yaml                     # 插件元数据信息
+         ├─ README.md                         # 插件说明文档
+         ├─ requirements.txt                  # 插件依赖列表
+         ├─ run_ruff.bat                      # Ruff 一键格式化与自动修复脚本（开发辅助）
+         │
          ├─ admin/                            # 独立 Web 管理端前端资源
          │  ├─ css/
          │  │  └─ style.css                   # 管理端全局样式
@@ -271,15 +284,36 @@ AstrBot/
          │  │
          │  └─ js/
          │     ├─ app.jsx                     # 前端应用入口与视图装配
-         │     ├─ components/                 # 布局与配置渲染组件
-         │     ├─ context/                    # 全局状态上下文
-         │     ├─ hooks/                      # API / WebSocket 等复用逻辑
-         │     ├─ utils/                      # 认证、HTTP、格式化工具
-         │     └─ views/                      # 状态页、任务页、通知页、配置页视图
-         │
-         ├─ assets/                           # README / 仓库展示资源
+         │     ├─ components/
+         │     │  ├─ config/
+         │     │  │  └─ ConfigRenderer.jsx    # 动态配置表单渲染器
+         │     │  │
+         │     │  └─ layout/
+         │     │     ├─ Header.jsx            # 顶部导航组件
+         │     │     └─ Sidebar.jsx           # 侧边栏组件
+         │     │
+         │     ├─ context/
+         │     │  └─ AppContext.jsx           # 全局状态上下文
+         │     │
+         │     ├─ hooks/
+         │     │  ├─ useApi.js                # 管理端 API 请求封装
+         │     │  └─ useWebSocket.js          # WebSocket 连接与实时同步逻辑
+         │     │
+         │     ├─ utils/
+         │     │  ├─ auth.js                  # 管理端认证辅助
+         │     │  ├─ formatters.js            # 文本与数据格式化工具
+         │     │  ├─ http.js                  # 底层 HTTP 请求工具
+         │     │  └─ markdown.js              # Markdown 渲染辅助
+         │     │
+         │     └─ views/
+         │        ├─ StatusView.jsx           # 运行状态视图
+         │        ├─ TasksView.jsx            # 任务管理视图
+         │        ├─ NotificationsView.jsx    # 通知中心视图
+         │        ├─ MarkdownDocsView.jsx     # 文档浏览视图
+         │        └─ ConfigView.jsx           # 配置管理视图
          │
          ├─ core/                             # 模块化后端核心实现
+         │  ├─ __init__.py                    
          │  ├─ chat_flow.py                   # 主动消息执行流与上下文组织
          │  ├─ data_storage.py                # 数据读写与持久化辅助
          │  ├─ llm_adapter.py                 # LLM 调用适配层
@@ -291,24 +325,10 @@ AstrBot/
          │  ├─ session_override_manager.py    # 会话差异配置管理
          │  ├─ session_parser.py              # 会话 ID 解析与规范化
          │  ├─ task_scheduler.py              # 定时任务与触发调度逻辑
-         │  └─ web_admin_server.py            # 独立 Web 管理端后端服务与通知接口桥接
+         │  └─ web_admin_server.py            # Web 管理端服务与通知接口桥接
          │
-         ├─ docs/                             # 项目内部开发文档
-         │  └─ notification-api-spec.md       # 通知系统 API 文档与前端类型映射约定
-         │
-         ├─ utils/
-         │  └─ time_utils.py                  # 通用时间工具函数
-         │
-         ├─ _conf_schema.json                 # 配置文件结构定义
-         ├─ .gitattributes                    # Git 行尾策略
-         ├─ CHANGELOG.md                      # 插件更新日志，适用于 AstrBot v4.11.2+
-         ├─ CONTRIBUTING.md                   # 贡献指南
-         ├─ LICENSE                           # 许可证文件
-         ├─ logo.png                          # 插件 Logo，适用于 AstrBot v4.5.0+
-         ├─ main.py                           # AstrBot 插件主入口
-         ├─ metadata.yaml                     # 插件元数据
-         ├─ README.md                         # 说明文档
-         └─ requirements.txt                  # 依赖列表
+         └─ utils/
+            └─ time_utils.py                  # 通用时间工具函数
 ```
 
 插件会在 `AstrBot/data/` 目录下创建自己的数据文件夹，用于保存运行时状态、通知缓存与配置快照：
