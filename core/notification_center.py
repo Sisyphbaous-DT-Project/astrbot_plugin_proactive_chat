@@ -16,6 +16,8 @@ import aiofiles.os as aio_os
 
 from astrbot.api import logger
 
+from ..utils.version import get_plugin_version
+
 
 class NotificationCenter:
     """负责远端通知拉取、本地缓存与已读状态维护。"""
@@ -67,35 +69,14 @@ class NotificationCenter:
         return f"{base_url}/api/v1/{app_slug}/notifications/updates?{query}"
 
     async def _get_plugin_version(self) -> str:
-        # 远端通知接口要求携带插件版本；优先复用插件实例版本，缺失时回退 metadata 文件。
+        # 远端通知接口要求携带插件版本；统一复用版本工具并去掉 v 前缀。
         plugin_version = (
             getattr(self.plugin, "version", None)
             or getattr(self.plugin, "__version__", None)
-            or ""
+            or get_plugin_version(default="0.0.0", strip_v_prefix=True)
         )
         normalized = str(plugin_version).strip().lstrip("vV")
-        if normalized:
-            return normalized
-
-        try:
-            metadata_path = Path(__file__).resolve().parent.parent / "metadata.yaml"
-            metadata_text = await asyncio.to_thread(
-                metadata_path.read_text, encoding="utf-8"
-            )
-            for line in metadata_text.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("version:"):
-                    value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-                    normalized = value.lstrip("vV")
-                    if normalized:
-                        return normalized
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug(f"[主动消息] 读取插件版本失败喵: {e}")
-
-        # 最终兜底值，避免 query 参数缺失导致远端网关拒绝请求。
-        return "0.0.0"
+        return normalized or "0.0.0"
 
     def _get_poll_interval_seconds(self) -> int:
         settings = self._get_settings()
