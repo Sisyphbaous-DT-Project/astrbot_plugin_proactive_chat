@@ -273,11 +273,13 @@ class TelemetryManager:
         # 先替换用户目录路径，避免把系统用户名或宿主机目录结构暴露出去。
         stack = re.sub(r"[A-Za-z]:\\Users\\[^\\]+\\", r"<USER_HOME>\\", stack)
         stack = re.sub(r"/(?:home|Users|root)/[^/]+/", r"<USER_HOME>/", stack)
-        stack = re.sub(r"/root/", r"<USER_HOME>/", stack)
         # 插件内部路径统一折叠成相对占位，保留定位意义但隐藏真实安装位置。
         stack = re.sub(r".*astrbot_plugin_proactive_chat[/\\]", r"<PLUGIN>/", stack)
         # site-packages 同样做路径折叠，避免把环境细节大量上传到遥测平台。
         stack = re.sub(r".*site-packages[/\\]", r"<SITE_PACKAGES>/", stack)
+        # 对其他 Windows / Unix 绝对路径做保底折叠，减少非用户目录路径泄露。
+        stack = re.sub(r"\b[A-Za-z]:\\[^\r\n'\"<>|]*", "<WINDOWS_PATH>", stack)
+        stack = re.sub(r"(?<!<)/(?:[^\s/'\"]+/)+[^\s/'\"]+", "<UNIX_PATH>", stack)
         # 最后再复用消息脱敏规则，继续过滤 UMO、Prompt 和 key/value 等业务敏感信息。
         stack = self._sanitize_message(stack)
         return stack
@@ -287,8 +289,9 @@ class TelemetryManager:
         sanitized = message
         # 先过滤系统路径，防止异常字符串中直接包含宿主机用户名或完整目录。
         sanitized = re.sub(r"/(?:home|Users|root)/[^/\s]+/", r"<USER_HOME>/", sanitized)
-        sanitized = re.sub(r"/root/", r"<USER_HOME>/", sanitized)
         sanitized = re.sub(r"[A-Za-z]:\\Users\\[^\\\s]+\\", r"<USER_HOME>\\", sanitized)
+        sanitized = re.sub(r"\b[A-Za-z]:\\[^\r\n'\"<>|]*", "<WINDOWS_PATH>", sanitized)
+        sanitized = re.sub(r"(?<!<)/(?:[^\s/'\"]+/)+[^\s/'\"]+", "<UNIX_PATH>", sanitized)
         # 再过滤业务敏感内容：会话 UMO、密码/密钥类字段、提示词正文。
         sanitized = self._UMO_PATTERN.sub("<SESSION_UMO>", sanitized)
         sanitized = self._KEY_VALUE_PATTERN.sub(r"\1\2<FILTERED>", sanitized)
