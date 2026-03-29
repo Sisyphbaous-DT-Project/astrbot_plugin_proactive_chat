@@ -129,7 +129,7 @@ If you want your AI companion to feel more emotionally present, or simply want y
 >
 > Development period: 58 days total (main plugin only)
 >
-> Total work time: approximately 292 hours (main plugin only)
+> Total work time: approximately 293 hours (main plugin only)
 >
 > Main models used for development: Gemini-2.5-Pro, Kimi For Coding, Gemini-3.0 Flash/Pro, GPT-5.3 & 5.4-Codex (with RooCode in VSCode)
 >
@@ -139,7 +139,7 @@ If you want your AI companion to feel more emotionally present, or simply want y
 >
 > Dialogue workspace: Chatbox 1.13.2, VSCode
 >
-> Tokens Used: 640,282,213
+> Tokens Used: 642,030,443
 
 ## 🌟 Features
 

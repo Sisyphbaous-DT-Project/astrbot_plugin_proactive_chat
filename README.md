@@ -130,7 +130,7 @@
 >
 > 开发时长：累计 58 天（主插件部分）
 >
-> 累计工时：约 292 小时（主插件部分）
+> 累计工时：约 293 小时（主插件部分）
 >
 > 使用的大模型：Gemini-2.5-Pro、Kimi For Coding、Gemini-3.0 Flash/Pro、GPT-5.3 & 5.4-Codex (With RooCode in VSCode)
 >
@@ -140,7 +140,7 @@
 >
 > 对话窗口搭建：Chatbox 1.13.2、VSCode
 >
-> Tokens Used：640,282,213
+> Tokens Used：642,030,443
 
 ## 🌟 功能特色
 
