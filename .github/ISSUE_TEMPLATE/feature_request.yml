@@ -1,8 +1,7 @@
-
 name: '🎉 功能建议'
-title: "[Feature] "
 description: 提交建议帮助我们改进。
-labels: [ "type/feat" ]
+title: '[Feature] '
+labels: [ 'type/feat' ]
 body:
   - type: markdown
     attributes:
@@ -13,6 +12,8 @@ body:
     attributes:
       label: 描述
       description: 简短描述您的功能建议。
+      placeholder: >
+        请简要说明你希望新增、改进或调整的功能。
     validations:
       required: true
 
@@ -28,8 +29,7 @@ body:
   - type: dropdown
     attributes:
       label: 你希望该功能主要服务于哪个消息平台？
-      description: 请选择最主要的平台。如该建议希望兼容全部平台，可选择“其他平台”并在补充说明中填写“全平台”或具体范围。
-      multiple: false
+      description: 请选择最主要的平台。如该建议希望兼容全部平台，可选择“其他平台”并在下方补充说明中填写“全平台”或具体范围。
       options:
         - 'QQ 官方机器人 (Websockets 方式)'
         - 'QQ 官方机器人 (Webhook 方式)'
@@ -66,7 +66,6 @@ body:
     attributes:
       label: 当前主要部署方式（可选）
       description: 如果该建议与你的运行环境有关，请选择最接近的一项。
-      multiple: false
       options:
         - 'uv 一键部署'
         - 'Docker / Docker Compose 部署'
@@ -112,4 +111,4 @@ body:
 
   - type: markdown
     attributes:
-      value: "感谢您填写我们的表单！"
+      value: '感谢您填写我们的表单！'

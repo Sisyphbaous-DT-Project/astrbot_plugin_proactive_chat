@@ -1,6 +1,6 @@
 name: '❓ 使用咨询 / 问题讨论'
-title: '[Discussion] '
 description: 提交咨询、排查思路或开放性讨论。
+title: '[Discussion] '
 labels: [ 'type/discussion' ]
 body:
   - type: markdown
@@ -39,7 +39,6 @@ body:
     attributes:
       label: 你目前对问题性质的判断
       description: 这有助于我们更快判断后续应继续讨论、补文档，还是转为 Bug。
-      multiple: false
       options:
         - '不确定，想先确认是否为预期行为'
         - '可能是插件 Bug，但还不能确定'
@@ -68,7 +67,6 @@ body:
     attributes:
       label: 部署方式
       description: 请选择最接近的一项。
-      multiple: false
       options:
         - 'uv 一键部署'
         - 'Docker / Docker Compose 部署'
@@ -90,7 +88,6 @@ body:
     attributes:
       label: 使用的消息平台适配器
       description: 请选择你当前主要使用或排查的平台。如涉及多个平台，请先选最主要的一个，并在补充说明中写明其他平台。
-      multiple: false
       options:
         - 'QQ 官方机器人 (Websockets 方式)'
         - 'QQ 官方机器人 (Webhook 方式)'
@@ -126,9 +123,7 @@ body:
   - type: dropdown
     attributes:
       label: 操作系统
-      description: |
-        你当前主要运行在什么操作系统上？
-      multiple: false
+      description: 你当前主要运行在什么操作系统上？
       options:
         - 'Windows'
         - 'macOS'
@@ -141,8 +136,7 @@ body:
   - type: textarea
     attributes:
       label: 补充说明（可选）
-      description: >
-        如果涉及多个平台、多个 AstrBot 版本、特殊部署环境或自定义适配器，请在这里补充。
+      description: 如果涉及多个平台、多个 AstrBot 版本、特殊部署环境或自定义适配器，请在这里补充。
       placeholder: >
         如: 同样的问题在 Telegram 与 QQ 官机都可复现；使用反向代理；部署在 NAS / 云服务器等。
     validations:
@@ -151,8 +145,7 @@ body:
   - type: textarea
     attributes:
       label: 相关配置、日志或截图
-      description: >
-        如相关配置片段、控制台输出、截图等。涉及隐私信息时请先脱敏。
+      description: 如相关配置片段、控制台输出、截图等。涉及隐私信息时请先脱敏。
       placeholder: >
         请尽量提供能帮助定位问题的配置、日志或截图。
     validations:
@@ -161,8 +154,7 @@ body:
   - type: checkboxes
     attributes:
       label: 你愿意在结论明确后提交 PR 或协助补充文档吗？
-      description: >
-        这不是必需的，但如果你愿意参与后续修复或补充说明，会非常有帮助。
+      description: 这不是必需的，但如果你愿意参与后续修复或补充说明，会非常有帮助。
       options:
         - label: 是的，我愿意在问题明确后协助推进。
 
@@ -176,4 +168,4 @@ body:
 
   - type: markdown
     attributes:
-      value: "感谢您填写我们的表单！"
+      value: '感谢您填写我们的表单！'
