@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import copy
+from typing import Any
 
 from astrbot.api import logger
 
@@ -14,7 +15,7 @@ class ConfigMixin:
     """配置读取与验证混入类。"""
 
     config: dict
-    session_override_manager: any
+    session_override_manager: Any
 
     async def _validate_config(self) -> None:
         """验证插件配置的完整性和有效性"""

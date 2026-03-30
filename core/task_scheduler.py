@@ -6,6 +6,7 @@ import asyncio
 import random
 import time
 from datetime import datetime
+from typing import Any
 
 from astrbot.api import logger
 
@@ -13,8 +14,8 @@ from astrbot.api import logger
 class SchedulerMixin:
     """调度与计时相关的混入类。"""
 
-    scheduler: any
-    timezone: any
+    scheduler: Any
+    timezone: Any
     data_lock: asyncio.Lock
     session_data: dict
     group_timers: dict[str, asyncio.TimerHandle]

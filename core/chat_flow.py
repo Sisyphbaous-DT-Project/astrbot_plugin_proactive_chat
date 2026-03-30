@@ -6,6 +6,7 @@ import asyncio
 import random
 import time
 from datetime import datetime
+from typing import Any
 
 from astrbot.api import logger
 from astrbot.core.agent.message import (
@@ -20,12 +21,12 @@ from ..utils.time_utils import is_quiet_time
 class ProactiveCoreMixin:
     """主动消息核心执行流混入类。"""
 
-    data_lock: any
+    data_lock: Any
     session_data: dict
     last_message_times: dict[str, float]
-    telemetry: any
+    telemetry: Any
     manual_trigger_sessions: set[str]
-    web_admin_server: any
+    web_admin_server: Any
 
     async def _clear_manual_trigger_state(self, session_id: str) -> None:
         """释放指定会话的手动触发占用状态，并向管理端广播任务刷新。"""

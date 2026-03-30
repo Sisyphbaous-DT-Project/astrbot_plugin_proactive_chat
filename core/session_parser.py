@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from astrbot.core.platform.platform import PlatformStatus
 
 
 class SessionMixin:
     """会话解析与日志格式化混入类。"""
 
-    context: any
+    context: Any
 
     def _parse_session_id(self, session_id: str) -> tuple[str, str, str] | None:
         """

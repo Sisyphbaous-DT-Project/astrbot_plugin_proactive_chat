@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
+from typing import Any
 
 from astrbot.api import logger
 
@@ -12,9 +13,9 @@ from astrbot.api import logger
 class LlmMixin:
     """上下文获取与 LLM 调用相关混入类。"""
 
-    context: any
-    timezone: any
-    telemetry: any
+    context: Any
+    timezone: Any
+    telemetry: Any
 
     def _sanitize_history_content(self, history: list) -> list:
         """清洗历史消息内容，确保所有内容均为纯文本字符串喵。"""

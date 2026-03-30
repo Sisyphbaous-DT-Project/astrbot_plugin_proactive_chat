@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -11,12 +12,12 @@ from astrbot.api.event import AstrMessageEvent, filter
 class EventsMixin:
     """事件监听相关混入类。"""
 
-    data_lock: any
+    data_lock: Any
     session_data: dict
     last_message_times: dict[str, float]
     session_temp_state: dict[str, dict]
     first_message_logged: set[str]
-    scheduler: any
+    scheduler: Any
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE, priority=999)
     async def on_friend_message(self, event: AstrMessageEvent):
