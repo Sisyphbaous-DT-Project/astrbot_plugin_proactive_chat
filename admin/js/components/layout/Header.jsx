@@ -1,9 +1,10 @@
-﻿/**
+﻿(() => {
+/**
  * 文件职责：顶部栏组件，负责标题展示、时钟显示、连接状态指示与主题切换入口。
  */
-
-const { Box, Typography, IconButton } = MaterialUI;
-const { useState, useEffect } = React;
+ 
+ const { Box, Typography, IconButton } = MaterialUI;
+ const { useState, useEffect } = React;
 
 function RealTimeClock({ timeZone }) {
     const [timeStr, setTimeStr] = useState('');
@@ -103,4 +104,5 @@ function Header({ currentView }) {
 
 // 暴露到全局，供入口应用直接渲染 Header。
 window.Header = Header;
+})();
 

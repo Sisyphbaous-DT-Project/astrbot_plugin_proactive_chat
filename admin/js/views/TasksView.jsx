@@ -1,8 +1,9 @@
-﻿/**
+﻿(() => {
+/**
  * 文件职责：任务页视图，负责调度任务列表、倒计时进度与任务操作入口展示。
  */
-
-const { Box, Typography, Button, Chip } = MaterialUI;
+ 
+ const { Box, Typography, Button, Chip } = MaterialUI;
 
 function normalizeTimestampValue(value) {
     // 兼容后端可能返回“秒级”或“毫秒级”时间戳；统一规整为毫秒再交给 Date 处理。
@@ -92,6 +93,38 @@ function resolveTaskProgress(job, nowMs) {
         statusLabel,
         progressPercent,
     };
+}
+
+function formatQuietHoursText(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '未配置';
+
+    const matched = raw.match(/^(\d{1,2})\s*-\s*(\d{1,2})$/);
+    if (!matched) return raw;
+
+    const startHour = Number(matched[1]);
+    const endHour = Number(matched[2]);
+    if (!Number.isInteger(startHour) || !Number.isInteger(endHour)) return raw;
+    if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) return raw;
+
+    return `${String(startHour).padStart(2, '0')}:00 - ${String(endHour).padStart(2, '0')}:00`;
+}
+
+function formatScheduleIntervalText(minMinutes, maxMinutes) {
+    const minValue = Number(minMinutes);
+    const maxValue = Number(maxMinutes);
+    const hasMin = Number.isFinite(minValue) && minValue > 0;
+    const hasMax = Number.isFinite(maxValue) && maxValue > 0;
+
+    if (!hasMin && !hasMax) return '未配置';
+    if (hasMin && hasMax) {
+        if (minValue > maxValue) {
+            return `配置异常：${minValue} > ${maxValue} 分钟`;
+        }
+        return `${minValue} - ${maxValue} 分钟`;
+    }
+    if (hasMin) return `${minValue} 分钟`;
+    return `${maxValue} 分钟`;
 }
 
 function TasksView({ onRefresh }) {
@@ -232,6 +265,11 @@ function TasksView({ onRefresh }) {
                         const triggerHelperText = isTriggerRunning
                             ? (triggerFeedback?.text || '正在触发，等待 LLM 回复完成…')
                             : triggerFeedback?.text;
+                        const scheduleIntervalText = formatScheduleIntervalText(
+                            job.schedule_min_interval_minutes,
+                            job.schedule_max_interval_minutes,
+                        );
+                        const quietHoursText = formatQuietHoursText(job.quiet_hours);
 
                         return (
                             <div className={`card task-card-enhanced ${task.status === 'urgent' ? 'is-urgent' : ''} ${task.status === 'expired' ? 'is-expired' : ''}`} key={job.id}>
@@ -285,6 +323,50 @@ function TasksView({ onRefresh }) {
                                     </div>
                                 </div>
 
+                                <Box
+                                    sx={{
+                                        mt: 1.5,
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                        gap: 1.25,
+                                    }}
+                                >
+                                    <Box
+                                        sx={{
+                                            px: 1.5,
+                                            py: 1.25,
+                                            borderRadius: 2.5,
+                                            border: '1px solid rgba(103, 80, 164, 0.12)',
+                                            background: 'rgba(103, 80, 164, 0.04)',
+                                            minWidth: 0,
+                                        }}
+                                    >
+                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.4 }}>
+                                            调度间隔
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                            {scheduleIntervalText}
+                                        </Typography>
+                                    </Box>
+                                    <Box
+                                        sx={{
+                                            px: 1.5,
+                                            py: 1.25,
+                                            borderRadius: 2.5,
+                                            border: '1px solid rgba(103, 80, 164, 0.12)',
+                                            background: 'rgba(103, 80, 164, 0.04)',
+                                            minWidth: 0,
+                                        }}
+                                    >
+                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.4 }}>
+                                            免打扰时段
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                            {quietHoursText}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+ 
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 'auto', pt: 1.5 }}>
                                    {triggerHelperText ? (
                                        <Typography
@@ -335,4 +417,5 @@ function TasksView({ onRefresh }) {
 
 // 暴露为全局视图组件，供应用入口按 currentView 切换。
 window.TasksView = TasksView;
+})();
 

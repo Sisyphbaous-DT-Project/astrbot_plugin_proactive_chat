@@ -1,8 +1,9 @@
-﻿/**
+﻿(() => {
+/**
  * 文件职责：侧边导航组件，负责视图切换、目录快捷操作与仓库信息入口展示。
  */
-
-const { Box, Typography } = MaterialUI;
+ 
+ const { Box, Typography } = MaterialUI;
 
 function SidebarActionButton({ icon, label, onClick, iconStyle }) {
     return (
@@ -178,4 +179,5 @@ function Sidebar({ currentView, onChange }) {
 
 // 暴露到全局，供入口应用直接使用侧边栏组件。
 window.Sidebar = Sidebar;
+})();
 

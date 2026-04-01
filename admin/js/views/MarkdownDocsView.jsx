@@ -1,8 +1,9 @@
+(() => {
 /**
  * 文件职责：Markdown 文档浏览视图，负责文档目录展示、内容加载与原生 Markdown 阅读体验。
  */
-
-const { Box, Typography, Button, Chip } = MaterialUI;
+ 
+ const { Box, Typography, Button, Chip } = MaterialUI;
 
 function MarkdownDocsView() {
     const { state, dispatch } = useAppContext();
@@ -503,3 +504,4 @@ function MarkdownDocsView() {
 }
 
 window.MarkdownDocsView = MarkdownDocsView;
+})();

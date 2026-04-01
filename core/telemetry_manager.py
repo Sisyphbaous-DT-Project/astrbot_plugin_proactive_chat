@@ -17,7 +17,7 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
-from ..utils.version import get_astrbot_version
+from ..utils.version import get_astrbot_version_info
 
 
 class TelemetryManager:
@@ -58,7 +58,8 @@ class TelemetryManager:
         # 当前先固定为 production，后续若接入测试环境可在这里扩展切换。
         self._env = "production"
         # AstrBot 版本在启动时一并上报，便于区分宿主版本差异带来的兼容性问题。
-        self._astrbot_version = get_astrbot_version()
+        self._astrbot_version_info = get_astrbot_version_info()
+        self._astrbot_version = self._astrbot_version_info.version
 
         if self._enabled:
             logger.debug(
@@ -172,6 +173,8 @@ class TelemetryManager:
                 "python_version": platform.python_version(),
                 "arch": platform.machine(),
                 "astrbot_version": self._astrbot_version,
+                "astrbot_version_source": self._astrbot_version_info.source,
+                "astrbot_version_error": self._astrbot_version_info.error,
             },
         )
 

@@ -32,6 +32,7 @@ class SessionOverrideManager:
         self.storage_dir = Path(storage_dir)
         self.overrides_file = self.storage_dir / self.OVERRIDES_FILE
         self._overrides: dict[str, dict[str, Any]] = {}
+        self._lock = asyncio.Lock()
         self._load()
 
     def _ensure_storage_dir(self) -> None:
@@ -93,16 +94,18 @@ class SessionOverrideManager:
             raise ValueError("override_patch 必须是对象")
 
         patch = self._sanitize_patch(copy.deepcopy(override_patch))
-        if patch:
-            self._overrides[session_id] = patch
-        else:
-            self._overrides.pop(session_id, None)
+        async with self._lock:
+            if patch:
+                self._overrides[session_id] = patch
+            else:
+                self._overrides.pop(session_id, None)
 
-        await self._save()
+            await self._save()
 
     async def delete_override(self, session_id: str) -> None:
-        self._overrides.pop(session_id, None)
-        await self._save()
+        async with self._lock:
+            self._overrides.pop(session_id, None)
+            await self._save()
 
     def get_effective(
         self, session_id: str, base_config: dict[str, Any] | None

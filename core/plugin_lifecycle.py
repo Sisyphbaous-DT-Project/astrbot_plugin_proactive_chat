@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import zoneinfo
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -25,13 +26,14 @@ class LifecycleMixin:
     last_message_times: dict[str, float]
     group_timers: dict[str, asyncio.TimerHandle]
     auto_trigger_timers: dict[str, asyncio.TimerHandle]
-    data_dir: any
-    session_data_file: any
-    web_admin_server: any
-    notification_center: any
-    telemetry: any
+    data_dir: Any
+    session_data_file: Any
+    web_admin_server: Any
+    notification_center: Any
+    telemetry: Any
     _heartbeat_task: asyncio.Task[None] | None
-    _original_exception_handler: any
+    _original_exception_handler: Any
+    _exception_handler_installed: bool
     _start_time: float
 
     async def initialize(self) -> None:
@@ -94,6 +96,7 @@ class LifecycleMixin:
             loop = asyncio.get_running_loop()
             self._original_exception_handler = loop.get_exception_handler()
             loop.set_exception_handler(self._handle_asyncio_exception)
+            self._exception_handler_installed = True
             self._start_time = time.monotonic()
             # 启动阶段立即上报一次 startup，便于统计活跃安装量与运行环境分布。
             self._track_task(asyncio.create_task(self.telemetry.track_startup()))
@@ -174,10 +177,14 @@ class LifecycleMixin:
                 # 再清理其余挂起的 telemetry tasks，避免遗留后台任务。
                 await self._cleanup_telemetry_tasks()
 
-            if self._original_exception_handler is not None:
+            if self._exception_handler_installed:
                 loop = asyncio.get_running_loop()
+                # 恢复条件取决于“是否曾经接管过异常处理器”，
+                # 而不是 terminate 时 telemetry 的当前启用状态。
+                # 原处理器即使是 None（表示默认处理器），也应完整恢复。
                 loop.set_exception_handler(self._original_exception_handler)
                 self._original_exception_handler = None
+                self._exception_handler_installed = False
             # 取消群聊沉默计时器
             timer_count = len(self.group_timers)
             for session_id, timer in self.group_timers.items():

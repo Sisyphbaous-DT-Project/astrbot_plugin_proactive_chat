@@ -1,8 +1,9 @@
+(() => {
 /**
  * 文件职责：通知中心视图，负责通知列表展示、已读状态操作与手动刷新交互。
  */
-
-const { Box, Typography, Button, Chip } = MaterialUI;
+ 
+ const { Box, Typography, Button, Chip } = MaterialUI;
 
 const NOTIFICATION_TYPE_META = {
     // 不同类型通知映射到不同的 UI 标签与颜色语义，便于用户快速区分内容性质。
@@ -255,3 +256,4 @@ function NotificationsView({ onRefresh }) {
 }
 
 window.NotificationsView = NotificationsView;
+})();

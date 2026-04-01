@@ -1,4 +1,6 @@
 import re
+from dataclasses import dataclass
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import astrbot
@@ -11,6 +13,15 @@ except ImportError:
         import tomli as tomllib
     except ImportError:
         tomllib = None
+
+
+@dataclass(frozen=True)
+class AstrBotVersionInfo:
+    """AstrBot 版本探测结果。"""
+
+    version: str
+    source: str
+    error: str | None = None
 
 
 def get_plugin_root() -> Path:
@@ -44,8 +55,75 @@ def get_plugin_version(default: str = "unknown", strip_v_prefix: bool = False) -
     return default
 
 
-def get_astrbot_version(default: str = "unknown") -> str:
-    """从 AstrBot 安装目录的 pyproject.toml 中读取 AstrBot 版本号。"""
+def _build_unknown_version_info(
+    default: str = "unknown", error: str = "all_methods_failed"
+) -> AstrBotVersionInfo:
+    """构造未知版本结果。"""
+    return AstrBotVersionInfo(version=default, source="unknown", error=error)
+
+
+def _get_astrbot_version_from_core_config() -> AstrBotVersionInfo | None:
+    """优先从 AstrBot 运行时核心配置模块读取版本。"""
+    module_candidates = (
+        "astrbot.core.config",
+        "astrbot.core.config.default",
+    )
+
+    for module_name in module_candidates:
+        try:
+            module = __import__(module_name, fromlist=["VERSION"])
+            version = str(getattr(module, "VERSION", "")).strip()
+            if version:
+                return AstrBotVersionInfo(version=version, source="core_config")
+        except Exception as exc:
+            logger.debug(
+                "[主动消息] 从 %s 读取 AstrBot VERSION 失败喵: %s",
+                module_name,
+                exc,
+            )
+
+    return None
+
+
+def _get_astrbot_version_from_distribution() -> AstrBotVersionInfo | None:
+    """从安装分发元数据读取 AstrBot 版本。"""
+    for dist_name in ("AstrBot", "astrbot"):
+        try:
+            version = str(importlib_metadata.version(dist_name)).strip()
+            if version:
+                return AstrBotVersionInfo(version=version, source="distribution")
+        except importlib_metadata.PackageNotFoundError:
+            logger.debug(
+                "[主动消息] 未找到 AstrBot 分发元数据喵: %s",
+                dist_name,
+            )
+        except Exception as exc:
+            logger.debug(
+                "[主动消息] 读取 AstrBot 分发元数据失败喵 (%s): %s",
+                dist_name,
+                exc,
+            )
+
+    return None
+
+
+def _get_astrbot_version_from_cli_module() -> AstrBotVersionInfo | None:
+    """从 AstrBot CLI 模块常量读取版本。"""
+    try:
+        from astrbot.cli import __version__ as cli_version
+
+        version = str(cli_version).strip()
+        if version:
+            return AstrBotVersionInfo(version=version, source="cli_module")
+        logger.debug("[主动消息] astrbot.cli.__version__ 为空喵。")
+    except Exception as exc:
+        logger.debug(f"[主动消息] 导入 astrbot.cli.__version__ 失败喵: {exc}")
+
+    return None
+
+
+def _get_astrbot_version_from_pyproject(default: str = "unknown") -> AstrBotVersionInfo:
+    """从 AstrBot 安装目录附近的 pyproject.toml 中兜底读取版本。"""
     try:
         astrbot_path = Path(astrbot.__file__).resolve().parent.parent
         pyproject_path = astrbot_path / "pyproject.toml"
@@ -54,19 +132,50 @@ def get_astrbot_version(default: str = "unknown") -> str:
             logger.debug(
                 f"[主动消息] 无法读取 AstrBot 版本喵，pyproject.toml 不存在: {pyproject_path}"
             )
-            return default
+            return _build_unknown_version_info(default, "pyproject_missing")
 
         if tomllib is None:
             logger.warning(
                 "[主动消息] 未找到 tomllib 或 tomli 模块，无法解析 AstrBot 版本喵。"
             )
-            return default
+            return _build_unknown_version_info(default, "tomllib_unavailable")
 
         with open(pyproject_path, "rb") as f:
             data = tomllib.load(f)
 
-        version = str(data.get("project", {}).get("version", default)).strip()
-        return version or default
+        project_version = str(data.get("project", {}).get("version", "")).strip()
+        if project_version:
+            return AstrBotVersionInfo(version=project_version, source="pyproject")
+
+        poetry_version = str(
+            data.get("tool", {}).get("poetry", {}).get("version", "")
+        ).strip()
+        if poetry_version:
+            return AstrBotVersionInfo(version=poetry_version, source="pyproject")
+
+        logger.debug(
+            f"[主动消息] pyproject.toml 中未找到可用的 AstrBot 版本字段喵: {pyproject_path}"
+        )
+        return _build_unknown_version_info(default, "pyproject_version_missing")
     except Exception as e:
         logger.debug(f"[主动消息] 获取 AstrBot 版本时出错喵: {e}")
-        return default
+        return _build_unknown_version_info(default, "pyproject_parse_failed")
+
+
+def get_astrbot_version_info(default: str = "unknown") -> AstrBotVersionInfo:
+    """获取带来源与错误码的 AstrBot 版本探测结果。"""
+    for resolver in (
+        _get_astrbot_version_from_core_config,
+        _get_astrbot_version_from_distribution,
+        _get_astrbot_version_from_cli_module,
+    ):
+        version_info = resolver()
+        if version_info is not None:
+            return version_info
+
+    return _get_astrbot_version_from_pyproject(default)
+
+
+def get_astrbot_version(default: str = "unknown") -> str:
+    """获取 AstrBot 版本号字符串。"""
+    return get_astrbot_version_info(default).version

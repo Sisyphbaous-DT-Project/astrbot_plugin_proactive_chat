@@ -5,6 +5,33 @@
 <!-- markdownlint-disable MD041 -->
 # ChangeLog
 
+# 2026/04/01 v1.2.1
+
+## 🚀 What's Changed
+
+### ✨ New Features (新功能)
+
+- 为任务管理页的卡片新增调度间隔与免打扰时段的信息展示 by @DBJD-CR in #50
+
+### 🐛 Bug Fixes (修复)
+
+- 修复并增强了遥测中对于 AstrBot 版本号的获取方式 by @DBJD-CR in #50
+- 优化了部分链路中输出日志的判断逻辑，避免误导性日志 by @DBJD-CR in #50
+- 尝试修复 release 中编译打包的插件，在部分环境下出现的 WebUI 白屏问题 by @DBJD-CR in #50
+- 修复了一些 Issue 模板中错误的语法问题 by @DBJD-CR in #50
+- 其他的一些代码稳定性改进 by @DBJD-CR in #50
+
+### 🔧 Chore (杂项)
+
+- 移除了 `aiofiles` 的依赖版本上限 by @DBJD-CR in #50
+- 修改发版工作流为本仓库实际情况 by @DBJD-CR in #50
+
+---
+
+**Full Changelog**: https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/compare/v1.2.0...v1.2.1
+
+---
+
 # 2026/03/30 v1.2.0
 
 经历了大半个月的高强度开发，新版本的主动消息插件终于和大家见面了！

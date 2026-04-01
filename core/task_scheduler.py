@@ -60,88 +60,16 @@ class SchedulerMixin:
             finally:
                 del self.auto_trigger_timers[session_id]
 
-        # 闭包回调：到达延迟后检查是否需要创建一次主动任务
+        # 闭包回调仅负责把真正逻辑投递回事件循环中的受控协程，
+        # 避免在 call_later 回调里直接读写共享状态。
         def _auto_trigger_callback(captured_session_id=session_id):
-            try:
-                # 计时器已被取消则直接跳过
-                if captured_session_id not in self.auto_trigger_timers:
-                    logger.debug(
-                        f"[主动消息] {self._get_session_log_str(captured_session_id)} 的自动触发已被取消，跳过喵。"
+            self._track_task(
+                asyncio.create_task(
+                    self._handle_auto_trigger_callback(
+                        captured_session_id, auto_trigger_minutes
                     )
-                    return
-
-                # 确认配置仍然启用
-                current_config = self._get_session_config(captured_session_id)
-                if not current_config or not current_config.get("enable", False):
-                    logger.info(
-                        f"[主动消息] {self._get_session_log_str(captured_session_id, current_config)} 的配置已禁用，取消自动触发喵。"
-                    )
-                    return
-
-                # 仅在插件启动后未收到任何消息时触发
-                last_message_time = self.last_message_times.get(captured_session_id, 0)
-                current_time = time.time()
-                time_since_plugin_start = current_time - self.plugin_start_time
-
-                # 仅“启动后始终无人发言”的会话满足自动触发条件
-                if last_message_time == 0 and time_since_plugin_start >= (
-                    auto_trigger_minutes * 60
-                ):
-                    try:
-                        schedule_conf = current_config.get("schedule_settings", {})
-                        min_interval = (
-                            int(schedule_conf.get("min_interval_minutes", 30)) * 60
-                        )
-                        max_interval = max(
-                            min_interval,
-                            int(schedule_conf.get("max_interval_minutes", 900)) * 60,
-                        )
-                        random_interval = random.randint(min_interval, max_interval)
-                        scheduled_at = time.time()
-                        next_trigger_time = scheduled_at + random_interval
-                        run_date = datetime.fromtimestamp(
-                            next_trigger_time, tz=self.timezone
-                        )
-
-                        # 自动触发生成的任务虽然不持久化到磁盘，但仍需补齐运行时元信息，
-                        # 以便 Web 管理端能够正确计算倒计时进度，而不是误判为满进度。
-                        session_payload = self.session_data.setdefault(
-                            captured_session_id, {}
-                        )
-                        session_payload["last_scheduled_at"] = scheduled_at
-                        session_payload["last_schedule_min_interval_seconds"] = (
-                            min_interval
-                        )
-                        session_payload["last_schedule_max_interval_seconds"] = (
-                            max_interval
-                        )
-                        session_payload["last_schedule_random_interval_seconds"] = (
-                            random_interval
-                        )
-
-                        self.scheduler.add_job(
-                            self.check_and_chat,
-                            "date",
-                            run_date=run_date,
-                            args=[captured_session_id],
-                            id=captured_session_id,
-                            replace_existing=True,
-                            misfire_grace_time=60,
-                        )
-
-                        logger.info(
-                            f"[主动消息] {self._get_session_log_str(captured_session_id, current_config)} 满足条件，自动触发任务已创建喵！执行时间 (非持久化): {run_date.strftime('%Y-%m-%d %H:%M:%S')} 喵"
-                        )
-
-                    except Exception as e:
-                        logger.error(f"[主动消息] 自动触发任务创建失败喵: {e}")
-
-                    # 触发一次后移除计时器
-                    if captured_session_id in self.auto_trigger_timers:
-                        del self.auto_trigger_timers[captured_session_id]
-
-            except Exception as e:
-                logger.error(f"[主动消息] 自动触发回调函数执行失败喵: {e}")
+                )
+            )
 
         try:
             loop = asyncio.get_running_loop()
@@ -602,44 +530,16 @@ class SchedulerMixin:
 
         idle_minutes = session_config.get("group_idle_trigger_minutes", 10)
 
-        # 群聊沉默回调：达到 idle_minutes 后尝试安排下一次主动消息
+        # 群聊沉默回调仅负责投递受控协程，
+        # 真正的状态检查与调度写入放到异步上下文中统一处理。
         def _schedule_callback(captured_session_id=normalized_session_id):
-            try:
-                # 若计时器已被重置则跳过
-                if captured_session_id not in self.group_timers:
-                    return
-
-                # 先移除当前已触发的句柄，避免状态页继续把它识别为“仍在运行的群沉默计时器”
-                del self.group_timers[captured_session_id]
-
-                # 确保会话数据存在
-                if captured_session_id not in self.session_data:
-                    logger.info(
-                        f"[主动消息] {self._get_session_log_str(captured_session_id)} 的会话数据不存在，创建初始会话数据喵。"
-                    )
-                    self.session_data[captured_session_id] = {"unanswered_count": 0}
-
-                current_config = self._get_session_config(captured_session_id)
-                if not current_config or not current_config.get("enable", False):
-                    logger.info(
-                        f"[主动消息] {self._get_session_log_str(captured_session_id, current_config)} 的配置已禁用或不存在，跳过主动消息创建喵。"
-                    )
-                    return
-
-                # 记录当前计数并创建下一次任务
-                current_unanswered = self.session_data.get(captured_session_id, {}).get(
-                    "unanswered_count", 0
-                )
+            self._track_task(
                 asyncio.create_task(
-                    self._schedule_next_chat_and_save(
-                        captured_session_id, reset_counter=False
+                    self._handle_group_silence_callback(
+                        captured_session_id, idle_minutes
                     )
                 )
-                logger.info(
-                    f"[主动消息] {self._get_session_log_str(captured_session_id, current_config)} 已沉默 {idle_minutes} 分钟，开始计划主动消息喵。(当前未回复次数: {current_unanswered})"
-                )
-            except Exception as e:
-                logger.error(f"[主动消息] 沉默倒计时回调函数执行失败喵: {e}")
+            )
 
         try:
             loop = asyncio.get_running_loop()
@@ -648,6 +548,121 @@ class SchedulerMixin:
             )
         except Exception as e:
             logger.error(f"[主动消息] 设置沉默倒计时失败喵: {e}")
+
+    async def _handle_auto_trigger_callback(
+        self, session_id: str, auto_trigger_minutes: int | float
+    ) -> None:
+        """在异步上下文中处理自动触发回调，避免直接在定时器回调里操作共享状态。"""
+        try:
+            async with self.data_lock:
+                # 计时器已被取消则直接跳过
+                if session_id not in self.auto_trigger_timers:
+                    logger.debug(
+                        f"[主动消息] {self._get_session_log_str(session_id)} 的自动触发已被取消，跳过喵。"
+                    )
+                    return
+
+                # 确认配置仍然启用
+                current_config = self._get_session_config(session_id)
+                if not current_config or not current_config.get("enable", False):
+                    logger.info(
+                        f"[主动消息] {self._get_session_log_str(session_id, current_config)} 的配置已禁用，取消自动触发喵。"
+                    )
+                    return
+
+                # 仅在插件启动后未收到任何消息时触发
+                last_message_time = self.last_message_times.get(session_id, 0)
+                current_time = time.time()
+                time_since_plugin_start = current_time - self.plugin_start_time
+
+                # 仅“启动后始终无人发言”的会话满足自动触发条件
+                if last_message_time != 0 or time_since_plugin_start < (
+                    auto_trigger_minutes * 60
+                ):
+                    return
+
+                schedule_conf = current_config.get("schedule_settings", {})
+                min_interval = int(schedule_conf.get("min_interval_minutes", 30)) * 60
+                max_interval = max(
+                    min_interval,
+                    int(schedule_conf.get("max_interval_minutes", 900)) * 60,
+                )
+                random_interval = random.randint(min_interval, max_interval)
+                scheduled_at = time.time()
+                next_trigger_time = scheduled_at + random_interval
+                run_date = datetime.fromtimestamp(next_trigger_time, tz=self.timezone)
+
+                # 自动触发生成的任务虽然不持久化到磁盘，但仍需补齐运行时元信息，
+                # 以便 Web 管理端能够正确计算倒计时进度，而不是误判为满进度。
+                session_payload = self.session_data.setdefault(session_id, {})
+                session_payload["last_scheduled_at"] = scheduled_at
+                session_payload["last_schedule_min_interval_seconds"] = min_interval
+                session_payload["last_schedule_max_interval_seconds"] = max_interval
+                session_payload["last_schedule_random_interval_seconds"] = (
+                    random_interval
+                )
+
+                self.scheduler.add_job(
+                    self.check_and_chat,
+                    "date",
+                    run_date=run_date,
+                    args=[session_id],
+                    id=session_id,
+                    replace_existing=True,
+                    misfire_grace_time=60,
+                )
+
+                logger.info(
+                    f"[主动消息] {self._get_session_log_str(session_id, current_config)} 满足条件，自动触发任务已创建喵！执行时间 (非持久化): {run_date.strftime('%Y-%m-%d %H:%M:%S')} 喵"
+                )
+        except Exception as e:
+            logger.error(f"[主动消息] 自动触发任务创建失败喵: {e}")
+        finally:
+            # 触发一次后移除计时器
+            if session_id in self.auto_trigger_timers:
+                del self.auto_trigger_timers[session_id]
+
+    async def _handle_group_silence_callback(
+        self, session_id: str, idle_minutes: int | float
+    ) -> None:
+        """在异步上下文中处理群聊沉默回调，避免直接在定时器回调里操作共享状态。"""
+        try:
+            async with self.data_lock:
+                # 若计时器已被重置则跳过
+                if session_id not in self.group_timers:
+                    return
+
+                # 先移除当前已触发的句柄，避免状态页继续把它识别为“仍在运行的群沉默计时器”
+                del self.group_timers[session_id]
+
+                # 确保会话数据存在
+                if session_id not in self.session_data:
+                    logger.info(
+                        f"[主动消息] {self._get_session_log_str(session_id)} 的会话数据不存在，创建初始会话数据喵。"
+                    )
+                    self.session_data[session_id] = {"unanswered_count": 0}
+
+                current_config = self._get_session_config(session_id)
+                if not current_config or not current_config.get("enable", False):
+                    logger.info(
+                        f"[主动消息] {self._get_session_log_str(session_id, current_config)} 的配置已禁用或不存在，跳过主动消息创建喵。"
+                    )
+                    return
+
+                current_unanswered = self.session_data.get(session_id, {}).get(
+                    "unanswered_count", 0
+                )
+
+            self._track_task(
+                asyncio.create_task(
+                    self._schedule_next_chat_and_save(session_id, reset_counter=False)
+                )
+            )
+            logger.info(
+                f"[主动消息] {self._get_session_log_str(session_id, current_config)} 已沉默 {idle_minutes} 分钟，开始计划主动消息喵。(当前未回复次数: {current_unanswered})"
+            )
+        except Exception as e:
+            logger.error(f"[主动消息] 沉默倒计时回调函数执行失败喵: {e}")
 
     def _cleanup_expired_session_states(self, current_time: float) -> None:
         """清理过期的会话状态，防止内存泄漏。"""

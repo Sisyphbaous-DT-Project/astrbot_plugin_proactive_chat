@@ -1,9 +1,10 @@
-﻿/**
+﻿(() => {
+/**
  * 文件职责：配置渲染核心组件，基于 Schema 动态生成表单并处理保存/会话差异配置逻辑。
  */
-
-const { Box, TextField, Switch, Typography, Button, Accordion, AccordionSummary, AccordionDetails, Paper, Chip, Slider, MenuItem, ToggleButton, ToggleButtonGroup } = MaterialUI;
-const { useState, useEffect, useRef, useLayoutEffect } = React;
+ 
+ const { Box, TextField, Switch, Typography, Button, Accordion, AccordionSummary, AccordionDetails, Paper, Chip, Slider, MenuItem, ToggleButton, ToggleButtonGroup } = MaterialUI;
+ const { useState, useEffect, useRef, useLayoutEffect } = React;
 
 // 递归扫描 Schema 中所有 object 节点，生成“全部展开 / 收起”功能需要的路径列表。
 const getAllExpandablePaths = (schema, prefix = '') => {
@@ -1277,4 +1278,5 @@ function ConfigRenderer() {
 }
 
 window.ConfigRenderer = ConfigRenderer;
+})();
 

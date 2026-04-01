@@ -1,8 +1,9 @@
-﻿/**
+﻿(() => {
+/**
  * 文件职责：状态页视图，负责服务状态、计时器可视化与手动刷新交互展示。
  */
-
-const { Box, Typography, Chip } = MaterialUI;
+ 
+ const { Box, Typography, Chip } = MaterialUI;
 
 function dedupeStatusTimerCards(cards) {
     const priorityMap = {
@@ -522,4 +523,5 @@ function StatusView({ onRefresh }) {
 
 // 暴露为全局视图组件，供应用入口按当前路由态切换展示。
 window.StatusView = StatusView;
+})();
 

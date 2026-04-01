@@ -943,6 +943,7 @@ class WebAdminServer:
             session_id = str(job.id)
             session_data = self.plugin.session_data.get(session_id, {})
             session_config = self.plugin._get_session_config(session_id) or {}
+            schedule_settings = session_config.get("schedule_settings", {})
             jobs.append(
                 {
                     "id": session_id,
@@ -971,6 +972,14 @@ class WebAdminServer:
                     "last_schedule_random_interval_seconds": session_data.get(
                         "last_schedule_random_interval_seconds"
                     ),
+                    # 透出当前会话配置中的调度区间与免打扰时段，供任务卡片展示。
+                    "schedule_min_interval_minutes": schedule_settings.get(
+                        "min_interval_minutes"
+                    ),
+                    "schedule_max_interval_minutes": schedule_settings.get(
+                        "max_interval_minutes"
+                    ),
+                    "quiet_hours": schedule_settings.get("quiet_hours", ""),
                 }
             )
         return jobs

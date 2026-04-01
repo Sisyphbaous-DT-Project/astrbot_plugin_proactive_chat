@@ -1,8 +1,9 @@
-﻿/**
+﻿(() => {
+/**
  * 文件职责：配置页视图容器，负责承载配置页头部结构并挂载 ConfigRenderer。
  */
-
-const { Box, Typography } = MaterialUI;
+ 
+ const { Box, Typography } = MaterialUI;
 
 function ConfigView() {
     return (
@@ -25,4 +26,5 @@ function ConfigView() {
 
 // 暴露为全局视图组件，供应用入口按 currentView 渲染。
 window.ConfigView = ConfigView;
+})();
 
