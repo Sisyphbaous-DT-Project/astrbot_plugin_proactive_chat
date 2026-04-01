@@ -7,6 +7,7 @@ import math
 import random
 import re
 import traceback
+from typing import Any
 
 from astrbot.api import logger
 from astrbot.core.message.components import Plain, Record
@@ -30,9 +31,9 @@ except ImportError:
 class SenderMixin:
     """发送与装饰钩子混入类。"""
 
-    context: any
+    context: Any
     session_data: dict
-    telemetry: any
+    telemetry: Any
 
     def _split_text(self, text: str, settings: dict) -> list[str]:
         """根据配置对文本进行分段。"""
@@ -352,7 +353,12 @@ class SenderMixin:
             enable_seg = seg_conf.get("enable", False)
             threshold = seg_conf.get("words_count_threshold", 150)
 
-            # 启用分段且内容长度未超过阈值时分段发送
+            # 注意：这里的 threshold 语义是“**不分段字数阈值**”，与字段名历史含义保持一致。
+            # 也就是说：
+            # 1. 文本较短（<= threshold）时，允许按规则切成多段，模拟更自然的连续输出；
+            # 2. 文本较长（> threshold）时，直接整段发送，避免长文被切碎后影响阅读体验。
+            # 该行为与 [`_conf_schema.json`](./_conf_schema.json) 和 [`README.md`](README.md) 的现有说明一致，
+            # 因此这里不是“超过阈值才分段”的常见语义，而是本插件刻意保留的兼容策略。
             if enable_seg and len(text) <= threshold:
                 segments = self._split_text(text, seg_conf)
                 if not segments:
