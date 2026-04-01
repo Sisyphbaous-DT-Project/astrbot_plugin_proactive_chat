@@ -31,7 +31,14 @@ class StorageMixin:
                 async with aiofiles.open(self.session_data_file, encoding="utf-8") as f:
                     content = await f.read()
                     # JSON 解析放到线程池，避免阻塞主事件循环
-                    self.session_data = await asyncio.to_thread(json.loads, content)
+                    loaded_data = await asyncio.to_thread(json.loads, content)
+                    if isinstance(loaded_data, dict):
+                        self.session_data = loaded_data
+                    else:
+                        logger.warning(
+                            "[主动消息] 会话数据文件结构无效喵，根节点应为对象，将使用空数据启动喵。"
+                        )
+                        self.session_data = {}
             except (OSError, json.JSONDecodeError) as e:
                 logger.error(
                     f"[主动消息] 加载会话数据失败喵: {e}，将使用空数据启动喵。"
@@ -109,8 +116,9 @@ class StorageMixin:
                     merged[key] = incoming[key]
                 continue
 
-            # 非数值（如 self_id）优先保留已有值
-            merged[key] = merged[key] or incoming[key]
+            # 非数值（如 self_id）优先保留已有值；仅在已有值缺失时才回退到 incoming。
+            if merged[key] is None:
+                merged[key] = incoming[key]
         return merged
 
     def _normalize_session_data(self) -> bool:
