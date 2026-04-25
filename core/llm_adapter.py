@@ -269,6 +269,19 @@ class LlmMixin:
 
         return "".join(texts).strip()
 
+    def _sanitize_platform_context_text(self, text: Any) -> str:
+        if text is None:
+            return ""
+
+        normalized = " ".join(str(text).split())
+        if not normalized:
+            return ""
+
+        return (
+            normalized.replace("[真实平台聊天流水开始]", "【真实平台聊天流水开始】")
+            .replace("[真实平台聊天流水结束]", "【真实平台聊天流水结束】")
+        )
+
     def _is_platform_bot_record(self, record: Any) -> bool:
         """判断平台记录是否为 Bot 消息。"""
         sender_id = str(
@@ -301,11 +314,13 @@ class LlmMixin:
                 continue
 
             content = self._get_platform_record_field(record, "content", None)
-            text = self._extract_platform_message_text(content)
+            text = self._sanitize_platform_context_text(
+                self._extract_platform_message_text(content)
+            )
             if not text:
                 continue
 
-            sender_name = (
+            sender_name = self._sanitize_platform_context_text(
                 self._get_platform_record_field(record, "sender_name", None)
                 or self._get_platform_record_field(record, "sender_id", None)
                 or "未知用户"
