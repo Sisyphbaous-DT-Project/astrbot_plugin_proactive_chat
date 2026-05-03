@@ -60,6 +60,25 @@ function StatusMetricRow({ label, value, emphasize = false, status = '' }) {
     );
 }
 
+function resolveSourceModeLabel(sourceMode) {
+    const normalized = String(sourceMode || '').trim().toLowerCase();
+    switch (normalized) {
+        case 'platform_message_history':
+            return '平台完整聊天流水';
+        case 'hybrid':
+            return '混合模式';
+        case 'conversation_history':
+        default:
+            return '当前 AstrBot LLM 对话历史';
+    }
+}
+
+function formatUnansweredLabel(currentCount, maxCount) {
+    const current = Math.max(0, Number(currentCount) || 0);
+    const max = Math.max(0, Number(maxCount) || 0);
+    return max > 0 ? `未回复次数: ${current}/${max}` : `未回复: ${current}`;
+}
+
 function resolveStatusTimerCard(timer, nowMs, displayTimezone) {
     // 后端 target_time / started_at 以秒级时间戳返回，这里统一转为 Date 便于格式化和比较。
     const targetTime = parseDateish(timer.target_time ? Number(timer.target_time) * 1000 : null);
@@ -102,6 +121,7 @@ function resolveStatusTimerCard(timer, nowMs, displayTimezone) {
     const kindBadgeLabel = isGroupSilence
         ? '沉默重置型'
         : (isGroupSession ? '群自动触发' : '私聊自动触发');
+    const sourceModeLabel = resolveSourceModeLabel(timer.source_mode);
     const countdownText = targetTime
         ? (remainingSeconds > 0 ? `${formatDuration(remainingSeconds, { compact: true, maxUnits: 3 })} 后到期` : '等待下一轮刷新确认')
         : '暂无有效目标时间';
@@ -124,6 +144,8 @@ function resolveStatusTimerCard(timer, nowMs, displayTimezone) {
         sectionTitle,
         accentClass,
         kindBadgeLabel,
+        sourceModeLabel,
+        unansweredLabel: formatUnansweredLabel(timer.unanswered_count, timer.max_unanswered_times),
         countdownText,
         sessionDisplayName,
         sessionSubText,
@@ -158,8 +180,9 @@ function StatusTimerCard({ timer, displayTimezone, nowMs, resetHint }) {
                 </div>
                 <div className="status-timer-chip-stack">
                     <div className={`status-timer-kind-badge ${meta.accentClass}`}>{meta.kindBadgeLabel}</div>
+                    <div className="status-timer-kind-badge">{meta.sourceModeLabel}</div>
                     <Chip
-                        label={`未回复: ${meta.unanswered_count ?? 0}`}
+                        label={meta.unansweredLabel}
                         size="small"
                         color={chipColor}
                         variant={Number(meta.unanswered_count ?? 0) > 0 ? 'filled' : 'outlined'}
