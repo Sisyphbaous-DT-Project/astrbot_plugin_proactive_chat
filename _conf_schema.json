@@ -127,6 +127,23 @@
                                     "step": 500
                                 }
                             },
+                            "persist_cache": {
+                                "description": "保存最近聊天记录",
+                                "type": "bool",
+                                "default": false,
+                                "hint": "开启后，插件会把最近聊天记录保存到插件数据目录。插件重载后，仍可以继续把这些记录作为主动消息上下文。"
+                            },
+                            "cache_storage_max_messages": {
+                                "description": "每个会话最多保存多少条",
+                                "type": "int",
+                                "default": 1000,
+                                "hint": "只影响插件自己记录的最近聊天。超过这个数量后，会删除更早的记录，避免长期运行时记录过多。",
+                                "slider": {
+                                    "min": 50,
+                                    "max": 5000,
+                                    "step": 50
+                                }
+                            },
                             "cache_source_policy": {
                                 "description": "优先使用的记录",
                                 "type": "string",
@@ -456,6 +473,23 @@
                                     "min": 0,
                                     "max": 20000,
                                     "step": 500
+                                }
+                            },
+                            "persist_cache": {
+                                "description": "保存最近聊天记录",
+                                "type": "bool",
+                                "default": false,
+                                "hint": "开启后，插件会把最近聊天记录保存到插件数据目录。插件重载后，仍可以继续把这些记录作为主动消息上下文。"
+                            },
+                            "cache_storage_max_messages": {
+                                "description": "每个会话最多保存多少条",
+                                "type": "int",
+                                "default": 1000,
+                                "hint": "只影响插件自己记录的最近聊天。超过这个数量后，会删除更早的记录，避免长期运行时记录过多。",
+                                "slider": {
+                                    "min": 50,
+                                    "max": 5000,
+                                    "step": 50
                                 }
                             },
                             "cache_source_policy": {

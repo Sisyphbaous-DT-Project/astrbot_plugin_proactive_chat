@@ -159,6 +159,8 @@ class LlmMixin:
                 "enable": True,
                 "cache_rounds": 10,
                 "cache_max_chars": 4000,
+                "persist_cache": False,
+                "cache_storage_max_messages": 1000,
                 "cache_source_policy": "cache_first",
                 "runtime_cache_prompt": "",
             }
@@ -173,6 +175,10 @@ class LlmMixin:
             "runtime_cache_enable": runtime_cache_settings["enable"],
             "runtime_cache_rounds": runtime_cache_settings["cache_rounds"],
             "runtime_cache_max_chars": runtime_cache_settings["cache_max_chars"],
+            "runtime_cache_persist_cache": runtime_cache_settings["persist_cache"],
+            "runtime_cache_storage_max_messages": runtime_cache_settings[
+                "cache_storage_max_messages"
+            ],
             "cache_source_policy": runtime_cache_settings["cache_source_policy"],
             "runtime_cache_prompt": runtime_cache_settings["runtime_cache_prompt"],
         }

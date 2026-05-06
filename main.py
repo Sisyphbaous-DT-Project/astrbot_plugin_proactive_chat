@@ -61,11 +61,15 @@ class ProactiveChatPlugin(
         # 使用 StarTools 获取插件专属数据目录（Path 对象）
         self.data_dir = star.StarTools.get_data_dir("astrbot_plugin_proactive_chat")
         self.session_data_file = self.data_dir / "session_data.json"
+        self.runtime_cache_file = self.data_dir / "runtime_context_cache.json"
 
         # 共享锁与持久化数据容器
         self.data_lock = None
         self.session_data: dict = {}
         self.runtime_context_cache = RuntimeContextCache()
+        self.runtime_cache_dirty_sessions: set[str] = set()
+        self.runtime_cache_save_task: asyncio.Task[None] | None = None
+        self.runtime_cache_save_delay_seconds = 2.0
         # 记录当前正在执行“立即触发”的会话，防止重复点击导致并发主动消息。
         self.manual_trigger_sessions: set[str] = set()
 

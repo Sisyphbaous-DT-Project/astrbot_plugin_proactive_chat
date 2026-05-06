@@ -243,3 +243,134 @@ async def test_loaded_plugin_instance_runs_runtime_cache_flow(
     finally:
         if str(astrbot_root) in sys.path:
             sys.path.remove(str(astrbot_root))
+
+
+@pytest.mark.asyncio
+async def test_loaded_plugin_instance_restores_persisted_runtime_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    plugin_source_root = Path(__file__).resolve().parents[1]
+    astrbot_root = tmp_path / "astrbot_root"
+    plugin_store_path = astrbot_root / "data" / "plugins"
+    config_path = astrbot_root / "data" / "config"
+    plugin_target_path = plugin_store_path / "astrbot_plugin_proactive_chat"
+
+    plugin_store_path.mkdir(parents=True, exist_ok=True)
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "astrbot_plugin_proactive_chat_config.json").write_text(
+        json.dumps(
+            {
+                "web_admin": {"enabled": False},
+                "notification_settings": {"enabled": False},
+                "telemetry_config": {"enabled": False},
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    shutil.copytree(
+        plugin_source_root,
+        plugin_target_path,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".pytest_cache",
+            "__pycache__",
+            "tests",
+        ),
+    )
+
+    monkeypatch.setenv("ASTRBOT_ROOT", str(astrbot_root))
+    sys.path.insert(0, str(astrbot_root))
+    try:
+        context = MockContext()
+        plugin_manager = PluginManager(cast(Any, context), cast(Any, {}))
+        monkeypatch.setattr(plugin_manager, "plugin_store_path", str(plugin_store_path))
+        monkeypatch.setattr(
+            "astrbot.core.star.star_manager.get_astrbot_plugin_path",
+            lambda: str(plugin_store_path),
+        )
+
+        success, error = await plugin_manager.load(
+            specified_dir_name="astrbot_plugin_proactive_chat",
+        )
+
+        assert success is True
+        assert error is None
+        metadata = next(
+            star
+            for star in star_registry
+            if star.root_dir_name == "astrbot_plugin_proactive_chat"
+        )
+        plugin = metadata.star_cls
+        assert plugin is not None
+
+        session_id = "aiocqhttp:FriendMessage:50002"
+        plugin.timezone = ZoneInfo("Asia/Shanghai")
+        plugin.context.get_using_tts_provider = lambda umo=None: None
+        plugin._normalize_session_id = MethodType(lambda self, sid: sid, plugin)
+
+        def _get_session_config(self, sid: str) -> dict:
+            if sid != session_id:
+                return {}
+            return {
+                "enable": True,
+                "_session_type": "private",
+                "tts_settings": {"enable_tts": False, "always_send_text": True},
+                "segmented_reply_settings": {"enable": False},
+                "context_settings": {
+                    "source_mode": "event_cache",
+                    "include_bot_messages": True,
+                    "runtime_cache_settings": {
+                        "enable": True,
+                        "persist_cache": True,
+                        "cache_rounds": 10,
+                        "cache_max_chars": 4000,
+                        "cache_storage_max_messages": 20,
+                        "cache_source_policy": "cache_first",
+                    },
+                },
+            }
+
+        plugin._get_session_config = MethodType(_get_session_config, plugin)
+        plugin.session_data[session_id] = {}
+
+        await plugin._cache_runtime_private_user_message(
+            FakeEvent("准备写入持久化的用户消息", "persist-user-1"),
+            session_id,
+            session_id,
+        )
+        await plugin._cache_runtime_bot_message_direct(
+            session_id=session_id,
+            text="准备写入持久化的机器人消息",
+            message_id="persist-bot-1",
+        )
+        await plugin._flush_runtime_context_cache_save()
+
+        restored_plugin = plugin.__class__(plugin.context, plugin.config)
+        restored_plugin.timezone = ZoneInfo("Asia/Shanghai")
+        restored_plugin._normalize_session_id = MethodType(
+            lambda self, sid: sid,
+            restored_plugin,
+        )
+        restored_plugin._get_session_config = MethodType(
+            _get_session_config,
+            restored_plugin,
+        )
+        restored_plugin.session_data[session_id] = {}
+
+        await restored_plugin._load_runtime_context_cache_from_disk()
+        records, _ = restored_plugin._load_runtime_context_cache_records(
+            session_id,
+            rounds=10,
+            include_bot_messages=True,
+        )
+        assert [record.text for record in records] == [
+            "准备写入持久化的用户消息",
+            "准备写入持久化的机器人消息",
+        ]
+    finally:
+        if str(astrbot_root) in sys.path:
+            sys.path.remove(str(astrbot_root))

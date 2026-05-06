@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+import aiofiles
+import aiofiles.os as aio_os
 
 from astrbot.api import logger
 
@@ -28,6 +33,67 @@ class CachedMessage:
     round_id: int = 0
     counted_round: bool = True
     source: str = "event"
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换成可写入 JSON 的结构。"""
+        return {
+            "ts": float(self.ts),
+            "raw_umo": self.raw_umo,
+            "normalized_umo": self.normalized_umo,
+            "chat_type": self.chat_type,
+            "role": self.role,
+            "sender_id": self.sender_id,
+            "sender_name": self.sender_name,
+            "text": self.text,
+            "message_id": self.message_id,
+            "round_id": int(self.round_id),
+            "counted_round": bool(self.counted_round),
+            "source": self.source,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "CachedMessage | None":
+        """从 JSON 数据恢复消息记录。"""
+        if not isinstance(data, dict):
+            return None
+
+        text = str(data.get("text") or "").strip()
+        normalized_umo = str(data.get("normalized_umo") or "").strip()
+        if not text or not normalized_umo:
+            return None
+
+        try:
+            ts = float(data.get("ts") or time.time())
+        except Exception:
+            ts = time.time()
+
+        try:
+            round_id = int(data.get("round_id") or 0)
+        except Exception:
+            round_id = 0
+
+        chat_type = str(data.get("chat_type") or "private").strip() or "private"
+        if chat_type not in {"private", "group"}:
+            chat_type = "private"
+
+        role = str(data.get("role") or "").strip()
+        if not role:
+            role = "member" if chat_type == "group" else "user"
+
+        return cls(
+            ts=ts,
+            raw_umo=str(data.get("raw_umo") or normalized_umo),
+            normalized_umo=normalized_umo,
+            chat_type=chat_type,
+            role=role,
+            sender_id=str(data.get("sender_id") or ""),
+            sender_name=str(data.get("sender_name") or ""),
+            text=text,
+            message_id=str(data.get("message_id") or ""),
+            round_id=max(0, round_id),
+            counted_round=bool(data.get("counted_round", True)),
+            source=str(data.get("source") or "event"),
+        )
 
 
 class RuntimeContextCache:
@@ -237,11 +303,147 @@ class RuntimeContextCache:
     def count(self, normalized_umo: str) -> int:
         return len(self.messages.get(normalized_umo, ()))
 
+    def total_count(self) -> int:
+        """统计当前保存的消息总数。"""
+        return sum(len(bucket) for bucket in self.messages.values())
+
+    def update_limits(
+        self,
+        *,
+        max_messages_per_session: int | None = None,
+        max_dedupe_keys: int | None = None,
+    ) -> None:
+        """更新保存上限，并立即裁剪已存在的数据。"""
+        if max_messages_per_session is not None:
+            self.max_messages_per_session = max(
+                50,
+                int(max_messages_per_session),
+            )
+            for bucket in self.messages.values():
+                while len(bucket) > self.max_messages_per_session:
+                    bucket.popleft()
+
+        if max_dedupe_keys is not None:
+            self.max_dedupe_keys = max(200, int(max_dedupe_keys))
+            while len(self.seen_message_keys) > self.max_dedupe_keys:
+                old = self.seen_message_keys.popleft()
+                self.seen_message_key_set.discard(old)
+
+    def to_dict(self, session_filter: set[str] | None = None) -> dict[str, Any]:
+        """转换成持久化文件结构。"""
+        sessions: dict[str, list[dict[str, Any]]] = {}
+        for session_id, bucket in self.messages.items():
+            if session_filter is not None and session_id not in session_filter:
+                continue
+            if not bucket:
+                continue
+            sessions[session_id] = [message.to_dict() for message in bucket]
+
+        return {
+            "version": 1,
+            "saved_at": time.time(),
+            "max_messages_per_session": self.max_messages_per_session,
+            "sessions": sessions,
+            "round_counters": {
+                key: int(value)
+                for key, value in self.round_counters.items()
+                if session_filter is None or key in session_filter
+            },
+            "private_pending_rounds": {
+                key: int(value)
+                for key, value in self.private_pending_rounds.items()
+                if session_filter is None or key in session_filter
+            },
+        }
+
+    def load_from_dict(
+        self,
+        data: Any,
+        session_filter: set[str] | None = None,
+    ) -> tuple[int, int]:
+        """从持久化文件恢复数据，返回会话数与消息数。"""
+        self.messages = {}
+        self.round_counters = {}
+        self.private_pending_rounds = {}
+        self.seen_message_keys = deque()
+        self.seen_message_key_set = set()
+
+        if not isinstance(data, dict):
+            return 0, 0
+
+        raw_sessions = data.get("sessions")
+        if not isinstance(raw_sessions, dict):
+            return 0, 0
+
+        raw_round_counters = data.get("round_counters")
+        if not isinstance(raw_round_counters, dict):
+            raw_round_counters = {}
+
+        raw_pending_rounds = data.get("private_pending_rounds")
+        if not isinstance(raw_pending_rounds, dict):
+            raw_pending_rounds = {}
+
+        for session_id, raw_records in raw_sessions.items():
+            normalized_session_id = str(session_id or "").strip()
+            if not normalized_session_id:
+                continue
+            if (
+                session_filter is not None
+                and normalized_session_id not in session_filter
+            ):
+                continue
+            if not isinstance(raw_records, list):
+                continue
+
+            bucket: deque[CachedMessage] = deque()
+            max_round_id = 0
+            for raw_record in raw_records[-self.max_messages_per_session :]:
+                message = CachedMessage.from_dict(raw_record)
+                if not message:
+                    continue
+                message.normalized_umo = normalized_session_id
+                key = self._build_dedupe_key(message)
+                if key in self.seen_message_key_set:
+                    continue
+                bucket.append(message)
+                max_round_id = max(max_round_id, int(message.round_id or 0))
+                self._remember_key(key)
+
+            if not bucket:
+                continue
+
+            self.messages[normalized_session_id] = bucket
+            try:
+                saved_round_id = int(raw_round_counters.get(normalized_session_id) or 0)
+            except Exception:
+                saved_round_id = 0
+            self.round_counters[normalized_session_id] = max(
+                max_round_id,
+                saved_round_id,
+            )
+
+            try:
+                pending_round_id = int(
+                    raw_pending_rounds.get(normalized_session_id) or 0
+                )
+            except Exception:
+                pending_round_id = 0
+            if pending_round_id > 0:
+                self.private_pending_rounds[normalized_session_id] = pending_round_id
+
+        return len(self.messages), self.total_count()
+
 
 class RuntimeContextCacheMixin:
     """为插件主类提供最近聊天的写入、读取与格式化能力。"""
 
     runtime_context_cache: RuntimeContextCache
+    config: dict
+    data_dir: Any
+    runtime_cache_file: Any
+    runtime_cache_dirty_sessions: set[str]
+    runtime_cache_save_task: asyncio.Task[None] | None
+    runtime_cache_save_delay_seconds: float
     timezone: Any
 
     def _ensure_runtime_context_cache(self) -> RuntimeContextCache:
@@ -250,6 +452,14 @@ class RuntimeContextCacheMixin:
             cache = RuntimeContextCache()
             self.runtime_context_cache = cache
         return cache
+
+    def _get_runtime_context_cache_file(self) -> Any:
+        cache_file = getattr(self, "runtime_cache_file", None)
+        if cache_file:
+            return cache_file
+        cache_file = self.data_dir / "runtime_context_cache.json"
+        self.runtime_cache_file = cache_file
+        return cache_file
 
     def _get_runtime_cache_settings_from_context(
         self, context_settings: dict[str, Any] | None
@@ -263,6 +473,8 @@ class RuntimeContextCacheMixin:
             "enable": "runtime_cache_enable",
             "cache_rounds": "runtime_cache_rounds",
             "cache_max_chars": "runtime_cache_max_chars",
+            "persist_cache": "runtime_cache_persist_cache",
+            "cache_storage_max_messages": "runtime_cache_storage_max_messages",
             "runtime_cache_prompt": "runtime_cache_prompt",
         }
 
@@ -310,6 +522,13 @@ class RuntimeContextCacheMixin:
             "enable": _to_bool("enable", True),
             "cache_rounds": _to_int("cache_rounds", 10, 0, 100),
             "cache_max_chars": _to_int("cache_max_chars", 4000, 0, 20000),
+            "persist_cache": _to_bool("persist_cache", False),
+            "cache_storage_max_messages": _to_int(
+                "cache_storage_max_messages",
+                1000,
+                50,
+                5000,
+            ),
             "cache_source_policy": policy,
             "runtime_cache_prompt": str(
                 _lookup("runtime_cache_prompt", "") or ""
@@ -339,6 +558,218 @@ class RuntimeContextCacheMixin:
 
         settings = self._get_runtime_cache_settings_for_session(session_id)
         return bool(settings.get("enable", True))
+
+    def _runtime_cache_persist_enabled_for_session(self, session_id: str) -> bool:
+        if not self._runtime_cache_enabled_for_session(session_id):
+            return False
+        settings = self._get_runtime_cache_settings_for_session(session_id)
+        return bool(settings.get("persist_cache", False))
+
+    def _iter_runtime_cache_candidate_sessions(self) -> set[str]:
+        sessions: set[str] = set()
+
+        for session_id in getattr(self, "session_data", {}) or {}:
+            if session_id:
+                sessions.add(self._normalize_session_id(str(session_id)))
+
+        for settings_key in ("friend_settings", "group_settings"):
+            settings = getattr(self, "config", {}).get(settings_key, {})
+            if not isinstance(settings, dict) or not settings.get("enable", False):
+                continue
+            for session_id in settings.get("session_list", []) or []:
+                if session_id:
+                    sessions.add(self._normalize_session_id(str(session_id)))
+
+        cache = getattr(self, "runtime_context_cache", None)
+        if isinstance(cache, RuntimeContextCache):
+            sessions.update(cache.messages.keys())
+        return sessions
+
+    def _get_runtime_cache_persistent_sessions(self) -> set[str]:
+        return {
+            session_id
+            for session_id in self._iter_runtime_cache_candidate_sessions()
+            if self._runtime_cache_persist_enabled_for_session(session_id)
+        }
+
+    def _get_runtime_cache_storage_limit(self) -> int:
+        limits: list[int] = []
+        for session_id in self._iter_runtime_cache_candidate_sessions():
+            settings = self._get_runtime_cache_settings_for_session(session_id)
+            try:
+                limits.append(int(settings.get("cache_storage_max_messages", 1000)))
+            except Exception:
+                limits.append(1000)
+
+        if not limits:
+            for settings_key in ("friend_settings", "group_settings"):
+                settings = getattr(self, "config", {}).get(settings_key, {})
+                if not isinstance(settings, dict) or not settings.get("enable", False):
+                    continue
+                context_settings = settings.get("context_settings")
+                parsed = self._get_runtime_cache_settings_from_context(
+                    context_settings if isinstance(context_settings, dict) else {}
+                )
+                limits.append(int(parsed.get("cache_storage_max_messages", 1000)))
+
+        return max(50, min(max(limits or [1000]), 5000))
+
+    def _refresh_runtime_context_cache_limits(self) -> None:
+        cache = self._ensure_runtime_context_cache()
+        cache.update_limits(
+            max_messages_per_session=self._get_runtime_cache_storage_limit()
+        )
+
+    async def _load_runtime_context_cache_from_disk(self) -> None:
+        self._refresh_runtime_context_cache_limits()
+        cache_file = self._get_runtime_context_cache_file()
+        if not await aio_os.path.exists(cache_file):
+            return
+
+        try:
+            async with aiofiles.open(cache_file, encoding="utf-8") as f:
+                content = await f.read()
+            payload = await asyncio.to_thread(json.loads, content)
+            raw_sessions = payload.get("sessions") if isinstance(payload, dict) else {}
+            file_sessions = (
+                set(raw_sessions.keys()) if isinstance(raw_sessions, dict) else set()
+            )
+            persistent_sessions = {
+                session_id
+                for session_id in (
+                    file_sessions | self._get_runtime_cache_persistent_sessions()
+                )
+                if self._runtime_cache_persist_enabled_for_session(session_id)
+            }
+            if not persistent_sessions:
+                logger.info(
+                    "[主动消息] 最近聊天记录文件存在，但当前没有启用保存最近聊天记录的会话。"
+                )
+                return
+            session_count, message_count = (
+                self._ensure_runtime_context_cache().load_from_dict(
+                    payload,
+                    session_filter=persistent_sessions,
+                )
+            )
+            if message_count > 0:
+                logger.info(
+                    f"[主动消息] 已从文件恢复最近聊天记录：{session_count} 个会话，{message_count} 条消息。"
+                )
+            else:
+                logger.info(
+                    "[主动消息] 最近聊天记录文件已读取，但当前配置下没有可恢复的记录。"
+                )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            logger.error(f"[主动消息] 读取最近聊天记录文件失败：{e}")
+
+    async def _save_runtime_context_cache_to_disk(self) -> None:
+        self._refresh_runtime_context_cache_limits()
+        cache = self._ensure_runtime_context_cache()
+        persistent_sessions = self._get_runtime_cache_persistent_sessions()
+        if not persistent_sessions:
+            return
+
+        payload = cache.to_dict(session_filter=persistent_sessions)
+        session_count = len(payload.get("sessions") or {})
+        message_count = sum(
+            len(records)
+            for records in (payload.get("sessions") or {}).values()
+            if isinstance(records, list)
+        )
+
+        try:
+            await aio_os.makedirs(self.data_dir, exist_ok=True)
+            content = await asyncio.to_thread(
+                json.dumps,
+                payload,
+                indent=2,
+                ensure_ascii=False,
+            )
+            async with aiofiles.open(
+                self._get_runtime_context_cache_file(),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                await f.write(content)
+            logger.info(
+                f"[主动消息] 最近聊天记录已保存：{session_count} 个会话，{message_count} 条消息。"
+            )
+        except OSError as e:
+            logger.error(f"[主动消息] 保存最近聊天记录失败：{e}")
+
+    def _mark_runtime_context_cache_dirty(self, session_id: str) -> None:
+        normalized_session_id = self._normalize_session_id(session_id)
+        if not self._runtime_cache_persist_enabled_for_session(normalized_session_id):
+            return
+
+        dirty_sessions = getattr(self, "runtime_cache_dirty_sessions", None)
+        if not isinstance(dirty_sessions, set):
+            dirty_sessions = set()
+            self.runtime_cache_dirty_sessions = dirty_sessions
+        dirty_sessions.add(normalized_session_id)
+
+        save_task = getattr(self, "runtime_cache_save_task", None)
+        if save_task and not save_task.done():
+            return
+
+        self.runtime_cache_save_task = asyncio.create_task(
+            self._delayed_runtime_context_cache_save()
+        )
+
+    async def _delayed_runtime_context_cache_save(self) -> None:
+        dirty_snapshot: set[str] = set()
+        try:
+            delay = float(getattr(self, "runtime_cache_save_delay_seconds", 2.0) or 0)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            dirty_sessions = getattr(self, "runtime_cache_dirty_sessions", None)
+            if isinstance(dirty_sessions, set):
+                dirty_snapshot = set(dirty_sessions)
+            await self._save_runtime_context_cache_to_disk()
+            if isinstance(dirty_sessions, set):
+                dirty_sessions.difference_update(dirty_snapshot)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[主动消息] 最近聊天记录自动保存失败：{e}", exc_info=True)
+        finally:
+            if getattr(self, "runtime_cache_save_task", None) is asyncio.current_task():
+                self.runtime_cache_save_task = None
+                dirty_sessions = getattr(self, "runtime_cache_dirty_sessions", None)
+                if isinstance(dirty_sessions, set) and dirty_sessions:
+                    self.runtime_cache_save_task = asyncio.create_task(
+                        self._delayed_runtime_context_cache_save()
+                    )
+
+    async def _flush_runtime_context_cache_save(self) -> None:
+        save_task = getattr(self, "runtime_cache_save_task", None)
+        if save_task and not save_task.done():
+            try:
+                await save_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"[主动消息] 等待最近聊天记录保存时出错：{e}", exc_info=True)
+
+        dirty_sessions = getattr(self, "runtime_cache_dirty_sessions", None)
+        if isinstance(dirty_sessions, set) and dirty_sessions:
+            dirty_snapshot = set(dirty_sessions)
+            await self._save_runtime_context_cache_to_disk()
+            dirty_sessions.difference_update(dirty_snapshot)
+
+        followup_task = getattr(self, "runtime_cache_save_task", None)
+        if (
+            followup_task
+            and not followup_task.done()
+            and (not isinstance(dirty_sessions, set) or not dirty_sessions)
+        ):
+            followup_task.cancel()
+            try:
+                await followup_task
+            except asyncio.CancelledError:
+                pass
+            self.runtime_cache_save_task = None
 
     def _extract_event_text_for_runtime_cache(self, event: Any) -> str:
         text = ""
@@ -501,6 +932,7 @@ class RuntimeContextCacheMixin:
             message_id=self._get_event_message_id_for_runtime_cache(event),
         )
         if added:
+            self._mark_runtime_context_cache_dirty(normalized_session_id)
             logger.info(
                 f"[主动消息] 已记录一条私聊用户消息：{self._get_session_log_str(normalized_session_id)}，"
                 f"第 {round_id} 轮，当前保留 {cached_count} 条最近消息。"
@@ -530,6 +962,7 @@ class RuntimeContextCacheMixin:
             message_id=self._get_event_message_id_for_runtime_cache(event),
         )
         if added:
+            self._mark_runtime_context_cache_dirty(normalized_session_id)
             logger.info(
                 f"[主动消息] 已记录一条群聊成员消息：{self._get_session_log_str(normalized_session_id)}，"
                 f"第 {round_id} 轮，当前保留 {cached_count} 条最近消息。"
@@ -597,6 +1030,7 @@ class RuntimeContextCacheMixin:
             source=source,
         )
         if added:
+            self._mark_runtime_context_cache_dirty(normalized_session_id)
             chat_label = "群聊" if chat_type == "group" else "私聊"
             logger.info(
                 f"[主动消息] 已记录一条 Bot {chat_label}消息：{self._get_session_log_str(normalized_session_id)}，"

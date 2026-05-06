@@ -58,6 +58,7 @@ class LifecycleMixin:
                 # 仅在发生规范化变更时回写，减少无效 IO
                 await self._save_data_internal()
         logger.info("[主动消息] 已成功从文件加载会话数据喵。")
+        await self._load_runtime_context_cache_from_disk()
 
         # 恢复插件启动后的消息时间（用于自动触发判定）
         restored_count = 0
@@ -214,6 +215,12 @@ class LifecycleMixin:
 
             self.auto_trigger_timers.clear()
             logger.info(f"[主动消息] 已取消 {auto_trigger_count} 个自动触发计时器喵。")
+
+            # 终止前写入最近聊天记录，避免插件重载后丢失已记录的上下文
+            try:
+                await self._flush_runtime_context_cache_save()
+            except Exception as e:
+                logger.error(f"[主动消息] 保存最近聊天记录时出错：{e}")
 
             # 清理调度器任务（逐个移除后再 shutdown，便于日志定位）
             if self.scheduler and self.scheduler.running:

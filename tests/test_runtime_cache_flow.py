@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
@@ -45,14 +46,27 @@ class FakeEvent:
 
 
 class RuntimeCacheHarness(RuntimeContextCacheMixin):
-    def __init__(self) -> None:
+    def __init__(self, data_dir: Path | None = None) -> None:
         self.runtime_context_cache = RuntimeContextCache()
         self.timezone = ZoneInfo("Asia/Shanghai")
         self.session_data: dict = {}
         self._session_configs: dict[str, dict] = {}
+        self.config: dict = {}
+        self.data_dir = data_dir or Path.cwd()
+        self.runtime_cache_file = self.data_dir / "runtime_context_cache.json"
+        self.runtime_cache_dirty_sessions: set[str] = set()
+        self.runtime_cache_save_task = None
+        self.runtime_cache_save_delay_seconds = 0.0
 
     def _get_session_config(self, session_id: str) -> dict:
         return self._session_configs.get(session_id, {})
+
+    def _get_context_settings(self, session_id: str) -> dict:
+        session_config = self._get_session_config(session_id)
+        if not isinstance(session_config, dict):
+            return {}
+        context_settings = session_config.get("context_settings")
+        return context_settings if isinstance(context_settings, dict) else {}
 
     def _normalize_session_id(self, session_id: str) -> str:
         return session_id
@@ -309,3 +323,53 @@ async def test_send_proactive_message_records_runtime_cache_after_success() -> N
     assert records[0].text == "测试主动消息写入缓存"
     assert records[0].role == "assistant"
     assert records[0].source == "proactive_send"
+
+
+@pytest.mark.asyncio
+async def test_runtime_cache_persists_and_restores_messages(tmp_path: Path) -> None:
+    session_id = "aiocqhttp:FriendMessage:60001"
+
+    plugin = RuntimeCacheHarness(tmp_path)
+    plugin.session_data[session_id] = {}
+    plugin._session_configs[session_id] = {
+        "enable": True,
+        "context_settings": {
+            "runtime_cache_settings": {
+                "enable": True,
+                "persist_cache": True,
+                "cache_storage_max_messages": 50,
+            }
+        },
+    }
+
+    for index in range(1, 27):
+        await plugin._cache_runtime_private_user_message(
+            FakeEvent(
+                text=f"第{index}轮用户消息",
+                sender_id="u6",
+                sender_name="用户六",
+                message_id=f"persist-u{index}",
+            ),
+            session_id,
+            session_id,
+        )
+        await plugin._cache_runtime_bot_message_direct(
+            session_id=session_id,
+            text=f"第{index}轮机器人消息",
+            message_id=f"persist-b{index}",
+        )
+    await plugin._flush_runtime_context_cache_save()
+
+    restored = RuntimeCacheHarness(tmp_path)
+    restored.session_data[session_id] = {}
+    restored._session_configs[session_id] = plugin._session_configs[session_id]
+    await restored._load_runtime_context_cache_from_disk()
+
+    records, record_count = restored._load_runtime_context_cache_records(
+        session_id,
+        rounds=30,
+        include_bot_messages=True,
+    )
+    assert record_count == 50
+    assert records[0].text == "第2轮用户消息"
+    assert records[-1].text == "第26轮机器人消息"
