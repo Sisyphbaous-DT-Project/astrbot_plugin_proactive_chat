@@ -54,15 +54,17 @@
                         "options": [
                             "conversation_history",
                             "platform_message_history",
+                            "event_cache",
                             "hybrid"
                         ],
                         "labels": [
                             "当前 AstrBot LLM 对话历史",
                             "平台完整聊天流水",
+                            "插件记录的最近聊天",
                             "混合模式"
                         ],
                         "default": "conversation_history",
-                        "hint": "conversation_history：使用 AstrBot 当前的 LLM 对话历史，适合延续 Bot 与用户已有的对话语境。platform_message_history：使用平台最近的真实聊天流水，适合群聊或希望参考“最近实际聊了什么”的场景。hybrid：同时使用两者，通常能兼顾对话连续性与最近聊天内容，但也会占用更多上下文。"
+                        "hint": "conversation_history：使用 AstrBot 当前的 LLM 对话历史，适合延续 Bot 与用户已有的对话语境。platform_message_history：使用平台最近的真实聊天流水，适合群聊或希望参考“最近实际聊了什么”的场景。event_cache：使用插件从 AstrBot 消息事件中自动记录的最近几轮聊天，适合在平台流水或对话历史不完整时补上最近发生的内容。hybrid：同时使用多个来源，通常能兼顾对话连续性与最近聊天内容，但也会占用更多上下文。"
                     },
                     "platform_history_count": {
                         "description": "注入平台聊天流水条数",
@@ -92,6 +94,58 @@
                         "type": "string",
                         "default": "bot",
                         "hint": "用于判断平台聊天流水中哪些消息属于 Bot 自己发送的内容。不同平台或适配器记录 Bot 的名字可能不一样，例如 bot、astrbot、assistant。当“是否包含 Bot 自身消息”开启或关闭时，会依赖这里的标识来正确区分 Bot 消息。"
+                    },
+                    "runtime_cache_settings": {
+                        "description": "插件记录最近聊天设置",
+                        "type": "object",
+                        "items": {
+                            "enable": {
+                                "description": "启用最近聊天记录",
+                                "type": "bool",
+                                "default": true,
+                                "hint": "开启后，插件会自动记录已启用会话中的最近聊天，用于主动消息前补充上下文。"
+                            },
+                            "cache_rounds": {
+                                "description": "带入最近几轮",
+                                "type": "int",
+                                "default": 10,
+                                "hint": "私聊中一轮表示用户消息与随后 Bot 回复构成的互动；群聊中一轮表示群成员的一条发言，Bot 发言只作为参考，不增加轮次。",
+                                "slider": {
+                                    "min": 0,
+                                    "max": 100,
+                                    "step": 1
+                                }
+                            },
+                            "cache_max_chars": {
+                                "description": "最多带入多少字",
+                                "type": "int",
+                                "default": 4000,
+                                "hint": "插件记录的聊天内容最多向模型提供多少字。超出后会优先省略更早的内容。",
+                                "slider": {
+                                    "min": 0,
+                                    "max": 20000,
+                                    "step": 500
+                                }
+                            },
+                            "cache_source_policy": {
+                                "description": "优先使用的记录",
+                                "type": "string",
+                                "options": [
+                                    "cache_first",
+                                    "cache_only",
+                                    "platform_first",
+                                    "conversation_first"
+                                ],
+                                "labels": [
+                                    "先看插件记录，再看其他记录",
+                                    "只看插件记录",
+                                    "先看平台流水，再看插件记录",
+                                    "优先 AstrBot 对话历史"
+                                ],
+                                "default": "cache_first",
+                                "hint": "仅在上下文来源为平台完整聊天流水、插件记录的最近聊天或混合模式时生效。"
+                            }
+                        }
                     }
                 }
             },
@@ -331,15 +385,17 @@
                         "options": [
                             "conversation_history",
                             "platform_message_history",
+                            "event_cache",
                             "hybrid"
                         ],
                         "labels": [
                             "当前 AstrBot LLM 对话历史",
                             "平台完整聊天流水",
+                            "插件记录的最近聊天",
                             "混合模式"
                         ],
                         "default": "platform_message_history",
-                        "hint": "conversation_history：使用 AstrBot 当前的 LLM 对话历史，适合延续 Bot 与用户已有的对话语境。platform_message_history：使用平台最近的真实聊天流水，适合群聊或希望参考“最近实际聊了什么”的场景。hybrid：同时使用两者，通常能兼顾对话连续性与最近聊天内容，但也会占用更多上下文。"
+                        "hint": "conversation_history：使用 AstrBot 当前的 LLM 对话历史，适合延续 Bot 与用户已有的对话语境。platform_message_history：使用平台最近的真实聊天流水，适合群聊或希望参考“最近实际聊了什么”的场景。event_cache：使用插件从 AstrBot 消息事件中自动记录的最近几轮聊天，适合在平台流水或对话历史不完整时补上最近发生的内容。hybrid：同时使用多个来源，通常能兼顾对话连续性与最近聊天内容，但也会占用更多上下文。"
                     },
                     "platform_history_count": {
                         "description": "注入平台聊天流水条数",
@@ -369,6 +425,58 @@
                         "type": "string",
                         "default": "bot",
                         "hint": "用于判断平台聊天流水中哪些消息属于 Bot 自己发送的内容。不同平台或适配器记录 Bot 的名字可能不一样，例如 bot、astrbot、assistant。当“是否包含 Bot 自身消息”开启或关闭时，会依赖这里的标识来正确区分 Bot 消息。"
+                    },
+                    "runtime_cache_settings": {
+                        "description": "插件记录最近聊天设置",
+                        "type": "object",
+                        "items": {
+                            "enable": {
+                                "description": "启用最近聊天记录",
+                                "type": "bool",
+                                "default": true,
+                                "hint": "开启后，插件会自动记录已启用会话中的最近聊天，用于主动消息前补充上下文。"
+                            },
+                            "cache_rounds": {
+                                "description": "带入最近几轮",
+                                "type": "int",
+                                "default": 10,
+                                "hint": "私聊中一轮表示用户消息与随后 Bot 回复构成的互动；群聊中一轮表示群成员的一条发言，Bot 发言只作为参考，不增加轮次。",
+                                "slider": {
+                                    "min": 0,
+                                    "max": 100,
+                                    "step": 1
+                                }
+                            },
+                            "cache_max_chars": {
+                                "description": "最多带入多少字",
+                                "type": "int",
+                                "default": 4000,
+                                "hint": "插件记录的聊天内容最多向模型提供多少字。超出后会优先省略更早的内容。",
+                                "slider": {
+                                    "min": 0,
+                                    "max": 20000,
+                                    "step": 500
+                                }
+                            },
+                            "cache_source_policy": {
+                                "description": "优先使用的记录",
+                                "type": "string",
+                                "options": [
+                                    "cache_first",
+                                    "cache_only",
+                                    "platform_first",
+                                    "conversation_first"
+                                ],
+                                "labels": [
+                                    "先看插件记录，再看其他记录",
+                                    "只看插件记录",
+                                    "先看平台流水，再看插件记录",
+                                    "优先 AstrBot 对话历史"
+                                ],
+                                "default": "cache_first",
+                                "hint": "仅在上下文来源为平台完整聊天流水、插件记录的最近聊天或混合模式时生效。"
+                            }
+                        }
                     }
                 }
             },

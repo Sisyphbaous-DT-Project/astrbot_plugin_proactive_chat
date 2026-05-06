@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from core.llm_adapter import LlmMixin
+from core.message_sender import SenderMixin
+from core.runtime_context_cache import RuntimeContextCache, RuntimeContextCacheMixin
+
+
+class FakeEvent:
+    def __init__(
+        self,
+        *,
+        text: str,
+        sender_id: str,
+        sender_name: str,
+        message_id: str,
+        unified_msg_origin: str = "",
+    ) -> None:
+        self.message_str = text
+        self.unified_msg_origin = unified_msg_origin
+        self.message_obj = SimpleNamespace(
+            message_id=message_id,
+            sender=SimpleNamespace(user_id=sender_id, nickname=sender_name),
+        )
+
+    def get_message_str(self) -> str:
+        return self.message_str
+
+    def get_message_outline(self) -> str:
+        return self.message_str
+
+    def get_sender_id(self) -> str:
+        return self.message_obj.sender.user_id
+
+    def get_sender_name(self) -> str:
+        return self.message_obj.sender.nickname
+
+    def get_result(self):
+        return None
+
+
+class RuntimeCacheHarness(RuntimeContextCacheMixin):
+    def __init__(self) -> None:
+        self.runtime_context_cache = RuntimeContextCache()
+        self.timezone = ZoneInfo("Asia/Shanghai")
+        self.session_data: dict = {}
+        self._session_configs: dict[str, dict] = {}
+
+    def _get_session_config(self, session_id: str) -> dict:
+        return self._session_configs.get(session_id, {})
+
+    def _normalize_session_id(self, session_id: str) -> str:
+        return session_id
+
+    def _get_session_log_str(self, session_id: str, session_config: dict | None = None) -> str:
+        return session_id
+
+    def _parse_bool_setting(self, value, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _sanitize_platform_context_text(self, text: str) -> str:
+        return " ".join(str(text).split())
+
+
+class HistoryHarness(LlmMixin, RuntimeCacheHarness):
+    def __init__(self) -> None:
+        RuntimeCacheHarness.__init__(self)
+
+    async def _load_platform_message_history_records(
+        self,
+        session_id: str,
+        limit: int,
+    ) -> tuple[list[dict], int]:
+        del session_id, limit
+        return [], 0
+
+    def _format_platform_history_as_context(
+        self,
+        records,
+        *,
+        include_bot_messages: bool,
+        bot_identifiers: set[str],
+        max_chars: int,
+        context_settings: dict | None = None,
+        unanswered_count: int = 0,
+    ) -> tuple[dict | None, int, int]:
+        del (
+            records,
+            include_bot_messages,
+            bot_identifiers,
+            max_chars,
+            context_settings,
+            unanswered_count,
+        )
+        return None, 0, 0
+
+
+class SenderHarness(SenderMixin, RuntimeCacheHarness):
+    def __init__(self) -> None:
+        RuntimeCacheHarness.__init__(self)
+        self.context = SimpleNamespace(
+            get_using_tts_provider=lambda umo=None: None,
+        )
+        self.telemetry = None
+        self._send_chain_with_hooks = AsyncMock(return_value=True)
+        self._reset_group_silence_timer = AsyncMock()
+
+    def _get_session_config(self, session_id: str) -> dict:
+        return self._session_configs.get(
+            session_id,
+            {
+                "enable": True,
+                "_session_type": "private",
+                "tts_settings": {"enable_tts": False, "always_send_text": True},
+                "segmented_reply_settings": {"enable": False},
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_runtime_cache_tracks_private_and_group_rounds() -> None:
+    plugin = RuntimeCacheHarness()
+
+    private_session = "aiocqhttp:FriendMessage:10001"
+    group_session = "aiocqhttp:GroupMessage:20001"
+    plugin._session_configs[private_session] = {"enable": True}
+    plugin._session_configs[group_session] = {"enable": True}
+
+    await plugin._cache_runtime_private_user_message(
+        FakeEvent(
+            text="第一轮私聊用户消息",
+            sender_id="u1",
+            sender_name="用户甲",
+            message_id="p1",
+        ),
+        private_session,
+        private_session,
+    )
+    await plugin._cache_runtime_bot_message_direct(
+        session_id=private_session,
+        text="第一轮私聊机器人回复",
+    )
+    await plugin._cache_runtime_private_user_message(
+        FakeEvent(
+            text="第二轮私聊用户消息",
+            sender_id="u1",
+            sender_name="用户甲",
+            message_id="p2",
+        ),
+        private_session,
+        private_session,
+    )
+    await plugin._cache_runtime_bot_message_direct(
+        session_id=private_session,
+        text="第二轮私聊机器人回复",
+    )
+
+    private_records, _ = plugin._load_runtime_context_cache_records(
+        private_session,
+        rounds=1,
+        include_bot_messages=True,
+    )
+    assert [record.text for record in private_records] == [
+        "第二轮私聊用户消息",
+        "第二轮私聊机器人回复",
+    ]
+    assert [record.round_id for record in private_records] == [2, 2]
+
+    await plugin._cache_runtime_group_member_message(
+        FakeEvent(
+            text="第一轮群聊成员发言",
+            sender_id="m1",
+            sender_name="群成员甲",
+            message_id="g1",
+        ),
+        group_session,
+        group_session,
+    )
+    await plugin._cache_runtime_bot_message_direct(
+        session_id=group_session,
+        text="第一轮群聊机器人回应",
+    )
+    await plugin._cache_runtime_group_member_message(
+        FakeEvent(
+            text="第二轮群聊成员发言",
+            sender_id="m2",
+            sender_name="群成员乙",
+            message_id="g2",
+        ),
+        group_session,
+        group_session,
+    )
+    await plugin._cache_runtime_bot_message_direct(
+        session_id=group_session,
+        text="第二轮群聊机器人回应",
+    )
+
+    group_records, _ = plugin._load_runtime_context_cache_records(
+        group_session,
+        rounds=1,
+        include_bot_messages=True,
+    )
+    assert [record.text for record in group_records] == [
+        "第二轮群聊成员发言",
+        "第二轮群聊机器人回应",
+    ]
+    assert [record.round_id for record in group_records] == [2, 2]
+
+
+@pytest.mark.asyncio
+async def test_effective_history_prefers_runtime_cache_when_configured() -> None:
+    plugin = HistoryHarness()
+    session_id = "aiocqhttp:FriendMessage:30001"
+    plugin._session_configs[session_id] = {"enable": True}
+
+    await plugin._cache_runtime_private_user_message(
+        FakeEvent(
+            text="缓存里的最近消息",
+            sender_id="u3",
+            sender_name="用户丙",
+            message_id="c1",
+        ),
+        session_id,
+        session_id,
+    )
+
+    effective_history = await plugin._build_effective_history_context(
+        session_id=session_id,
+        conversation_history=[{"role": "assistant", "content": "旧对话"}],
+        context_settings={
+            "source_mode": "platform_message_history",
+            "platform_history_count": 20,
+            "platform_history_prompt": "",
+            "include_bot_messages": True,
+            "bot_identifiers": {"bot"},
+            "platform_context_max_chars": 4000,
+            "runtime_cache_enable": True,
+            "runtime_cache_rounds": 10,
+            "runtime_cache_max_chars": 4000,
+            "cache_source_policy": "cache_first",
+            "runtime_cache_prompt": "",
+        },
+        unanswered_count=1,
+    )
+
+    assert len(effective_history) == 1
+    assert effective_history[0]["role"] == "system"
+    assert "缓存里的最近消息" in effective_history[0]["content"]
+    assert "旧对话" not in effective_history[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_event_cache_cache_only_returns_empty_without_records() -> None:
+    plugin = HistoryHarness()
+    session_id = "aiocqhttp:FriendMessage:30002"
+    plugin._session_configs[session_id] = {"enable": True}
+
+    effective_history = await plugin._build_effective_history_context(
+        session_id=session_id,
+        conversation_history=[{"role": "assistant", "content": "旧对话"}],
+        context_settings={
+            "source_mode": "event_cache",
+            "platform_history_count": 20,
+            "platform_history_prompt": "",
+            "include_bot_messages": True,
+            "bot_identifiers": {"bot"},
+            "platform_context_max_chars": 4000,
+            "runtime_cache_enable": True,
+            "runtime_cache_rounds": 10,
+            "runtime_cache_max_chars": 4000,
+            "cache_source_policy": "cache_only",
+            "runtime_cache_prompt": "",
+        },
+        unanswered_count=0,
+    )
+
+    assert effective_history == []
+
+
+@pytest.mark.asyncio
+async def test_send_proactive_message_records_runtime_cache_after_success() -> None:
+    plugin = SenderHarness()
+    session_id = "aiocqhttp:FriendMessage:40001"
+    plugin._session_configs[session_id] = {
+        "enable": True,
+        "_session_type": "private",
+        "tts_settings": {"enable_tts": False, "always_send_text": True},
+        "segmented_reply_settings": {"enable": False},
+    }
+
+    await plugin._send_proactive_message(session_id, "测试主动消息写入缓存")
+
+    plugin._send_chain_with_hooks.assert_awaited_once()
+    records, record_count = plugin._load_runtime_context_cache_records(
+        session_id,
+        rounds=1,
+        include_bot_messages=True,
+    )
+    assert record_count == 1
+    assert records[0].text == "测试主动消息写入缓存"
+    assert records[0].role == "assistant"
+    assert records[0].source == "proactive_send"

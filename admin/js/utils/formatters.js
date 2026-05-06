@@ -182,6 +182,8 @@ function resolveSourceModeLabel(sourceMode) {
     switch (normalized) {
         case 'platform_message_history':
             return '平台完整聊天流水';
+        case 'event_cache':
+            return '插件记录的最近聊天';
         case 'hybrid':
             return '混合模式';
         case 'conversation_history':
@@ -203,4 +205,3 @@ window.formatFriendlyTime = formatFriendlyTime;
 window.formatDuration = formatDuration;
 window.resolveSourceModeLabel = resolveSourceModeLabel;
 window.formatUnansweredLabel = formatUnansweredLabel;
-

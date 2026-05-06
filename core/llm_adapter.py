@@ -117,6 +117,7 @@ class LlmMixin:
         if source_mode not in {
             "conversation_history",
             "platform_message_history",
+            "event_cache",
             "hybrid",
         }:
             source_mode = "conversation_history"
@@ -146,6 +147,21 @@ class LlmMixin:
         platform_history_prompt = str(
             settings.get("platform_history_prompt") or ""
         ).strip()
+        runtime_cache_parser = getattr(
+            self,
+            "_get_runtime_cache_settings_from_context",
+            None,
+        )
+        if callable(runtime_cache_parser):
+            runtime_cache_settings = runtime_cache_parser(settings)
+        else:
+            runtime_cache_settings = {
+                "enable": True,
+                "cache_rounds": 10,
+                "cache_max_chars": 4000,
+                "cache_source_policy": "cache_first",
+                "runtime_cache_prompt": "",
+            }
 
         return {
             "source_mode": source_mode,
@@ -154,6 +170,11 @@ class LlmMixin:
             "include_bot_messages": include_bot_messages,
             "bot_identifiers": bot_identifiers,
             "platform_context_max_chars": max_chars,
+            "runtime_cache_enable": runtime_cache_settings["enable"],
+            "runtime_cache_rounds": runtime_cache_settings["cache_rounds"],
+            "runtime_cache_max_chars": runtime_cache_settings["cache_max_chars"],
+            "cache_source_policy": runtime_cache_settings["cache_source_policy"],
+            "runtime_cache_prompt": runtime_cache_settings["runtime_cache_prompt"],
         }
 
     def _parse_umo_for_platform_history(
@@ -478,6 +499,11 @@ class LlmMixin:
         platform_injected_count = 0
         platform_chars = 0
         platform_context = None
+        runtime_records_count = 0
+        runtime_injected_count = 0
+        runtime_chars = 0
+        runtime_context = None
+        cache_policy = settings.get("cache_source_policy", "cache_first")
 
         if source_mode in {"platform_message_history", "hybrid"}:
             (
@@ -498,25 +524,100 @@ class LlmMixin:
                 )
             )
 
+        if (
+            settings.get("runtime_cache_enable", True)
+            and source_mode in {"platform_message_history", "event_cache", "hybrid"}
+        ):
+            cache_loader = getattr(self, "_load_runtime_context_cache_records", None)
+            cache_formatter = getattr(self, "_format_runtime_cache_as_context", None)
+            if callable(cache_loader) and callable(cache_formatter):
+                runtime_records, runtime_records_count = cache_loader(
+                    session_id,
+                    rounds=settings["runtime_cache_rounds"],
+                    include_bot_messages=settings["include_bot_messages"],
+                )
+                runtime_context, runtime_injected_count, runtime_chars = (
+                    cache_formatter(
+                        runtime_records,
+                        max_chars=settings["runtime_cache_max_chars"],
+                        context_settings=settings,
+                        unanswered_count=unanswered_count,
+                    )
+                )
+
         if source_mode == "conversation_history":
             effective_history = conversation_history
         elif source_mode == "platform_message_history":
-            if platform_context:
+            if cache_policy == "cache_only":
+                if runtime_context:
+                    effective_history = [runtime_context]
+                else:
+                    logger.info(
+                        "[主动消息] 当前设置为只看插件记录，但暂时还没有可用的最近聊天，本轮不会带入历史上下文。"
+                    )
+                    effective_history = []
+            elif cache_policy == "cache_first" and runtime_context:
+                logger.info(
+                    f"[主动消息] 当前优先使用插件记录的最近聊天，已带入 {runtime_injected_count} 条。"
+                )
+                effective_history = [runtime_context]
+            elif cache_policy == "conversation_first" and conversation_history:
+                logger.info(
+                    f"[主动消息] 当前优先使用 AstrBot 对话历史，已带入 {conversation_count} 条。"
+                )
+                effective_history = conversation_history
+            elif platform_context:
                 effective_history = [platform_context]
+            elif runtime_context:
+                logger.info(
+                    f"[主动消息] 没有读到平台流水，改用插件记录的最近聊天，已带入 {runtime_injected_count} 条。"
+                )
+                effective_history = [runtime_context]
             else:
                 logger.warning(
                     f"[主动消息] 平台流水模式下没有读取到平台流水，已回退为对话历史，共 {conversation_count} 条喵。"
                 )
                 effective_history = conversation_history
-        elif source_mode == "hybrid":
-            if platform_context:
-                # 将 system 上下文置于首位，降低不同 provider 对 system role 的处理差异。
-                effective_history = [platform_context, *conversation_history]
-            else:
-                logger.warning(
-                    f"[主动消息] 混合模式下没有读取到平台流水，因此仅使用对话历史，共 {conversation_count} 条喵。"
+        elif source_mode == "event_cache":
+            if cache_policy == "conversation_first" and conversation_history:
+                logger.info(
+                    f"[主动消息] 当前优先使用 AstrBot 对话历史，已带入 {conversation_count} 条。"
                 )
                 effective_history = conversation_history
+            elif runtime_context:
+                effective_history = [runtime_context]
+            else:
+                logger.info(
+                    f"[主动消息] 暂时还没有插件记录的最近聊天，改用 AstrBot 对话历史，共 {conversation_count} 条。"
+                )
+                effective_history = (
+                    [] if cache_policy == "cache_only" else conversation_history
+                )
+        elif source_mode == "hybrid":
+            context_prefix: list[Any] = []
+            if cache_policy == "cache_only":
+                if runtime_context:
+                    context_prefix.append(runtime_context)
+                effective_history = context_prefix
+            elif cache_policy == "conversation_first" and conversation_history:
+                logger.info(
+                    f"[主动消息] 当前优先使用 AstrBot 对话历史，已带入 {conversation_count} 条。"
+                )
+                effective_history = conversation_history
+            else:
+                if cache_policy == "platform_first":
+                    candidates = [platform_context, runtime_context]
+                else:
+                    candidates = [runtime_context, platform_context]
+                context_prefix.extend(ctx for ctx in candidates if ctx)
+                if context_prefix:
+                    # 将 system 上下文置于首位，降低不同 provider 对 system role 的处理差异。
+                    effective_history = [*context_prefix, *conversation_history]
+                else:
+                    logger.warning(
+                        f"[主动消息] 混合模式下没有读取到平台流水，因此仅使用对话历史，共 {conversation_count} 条喵。"
+                    )
+                    effective_history = conversation_history
         else:
             logger.warning(
                 f"[主动消息] 遇到未识别的上下文模式“{source_mode}”，已回退为对话历史喵。"
@@ -526,13 +627,23 @@ class LlmMixin:
         mode_label_map = {
             "conversation_history": "对话历史",
             "platform_message_history": "平台流水",
+            "event_cache": "插件记录的最近聊天",
             "hybrid": "混合模式",
         }
+        policy_label_map = {
+            "cache_first": "先看插件记录，再看其他记录",
+            "cache_only": "只看插件记录",
+            "platform_first": "先看平台流水，再看插件记录",
+            "conversation_first": "优先 AstrBot 对话历史",
+        }
         source_mode_label = mode_label_map.get(source_mode, source_mode)
+        cache_policy_label = policy_label_map.get(cache_policy, cache_policy)
         logger.info(
             f"[主动消息] 上下文注入来源：{source_mode_label}，读取到对话历史 {conversation_count} 条，"
             f"平台流水原始记录 {platform_records_count} 条，注入上下文 {platform_injected_count} 条，"
-            f"平台流水上下文长度 {platform_chars} 字，最终提供给模型的上下文共 {len(effective_history)} 条喵。"
+            f"平台流水上下文长度 {platform_chars} 字；插件记录的最近聊天 {runtime_records_count} 条，"
+            f"实际带入 {runtime_injected_count} 条，最近聊天上下文长度 {runtime_chars} 字，选择方式：{cache_policy_label}，"
+            f"最终提供给模型的上下文共 {len(effective_history)} 条喵。"
         )
         return effective_history
 

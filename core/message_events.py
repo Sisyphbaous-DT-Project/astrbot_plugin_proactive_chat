@@ -86,6 +86,12 @@ class EventsMixin:
             )
             return
 
+        await self._cache_runtime_private_user_message(
+            event,
+            session_id,
+            normalized_session_id,
+        )
+
         # 取消旧的调度任务并重新安排
         cancelled = False
         try:
@@ -220,6 +226,12 @@ class EventsMixin:
             )
             return
 
+        await self._cache_runtime_group_member_message(
+            event,
+            session_id,
+            normalized_session_id,
+        )
+
         # 取消群聊中的既有调度任务（含“已持久化但未入调度器”的兜底判断）
         had_scheduled_task = False
         if self.scheduler.get_job(normalized_session_id):
@@ -294,7 +306,9 @@ class EventsMixin:
         session_id = event.unified_msg_origin
         normalized_session_id = self._normalize_session_id(session_id)
 
-        # 只对群聊生效
+        await self._cache_runtime_bot_message_from_event(event)
+
+        # 下面的调度清理只对群聊生效；私聊只需要记录 Bot 发言缓存。
         if "group" not in normalized_session_id.lower():
             return
 

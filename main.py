@@ -22,6 +22,7 @@ from .core.message_events import EventsMixin
 from .core.message_sender import SenderMixin
 from .core.notification_center import NotificationCenter
 from .core.plugin_lifecycle import LifecycleMixin
+from .core.runtime_context_cache import RuntimeContextCache, RuntimeContextCacheMixin
 from .core.session_config import ConfigMixin
 from .core.session_override_manager import SessionOverrideManager
 from .core.session_parser import SessionMixin
@@ -36,6 +37,7 @@ class ProactiveChatPlugin(
     StorageMixin,  # 会话数据加载/保存与迁移清理
     ConfigMixin,  # 配置读取与会话级配置路由
     SchedulerMixin,  # 定时任务、自动触发与沉默计时
+    RuntimeContextCacheMixin,  # 插件运行时最近聊天记录
     LlmMixin,  # 上下文准备与 LLM 调用封装
     SenderMixin,  # 主动消息发送与装饰钩子
     EventsMixin,  # 私聊/群聊事件监听处理
@@ -63,6 +65,7 @@ class ProactiveChatPlugin(
         # 共享锁与持久化数据容器
         self.data_lock = None
         self.session_data: dict = {}
+        self.runtime_context_cache = RuntimeContextCache()
         # 记录当前正在执行“立即触发”的会话，防止重复点击导致并发主动消息。
         self.manual_trigger_sessions: set[str] = set()
 

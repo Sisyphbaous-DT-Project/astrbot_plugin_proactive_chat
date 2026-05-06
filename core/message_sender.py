@@ -308,13 +308,13 @@ class SenderMixin:
         except Exception as e:
             logger.warning(f"[主动消息] 补写平台流水失败喵: {e}", exc_info=True)
 
-    async def _send_chain_with_hooks(self, session_id: str, components: list) -> None:
+    async def _send_chain_with_hooks(self, session_id: str, components: list) -> bool:
         """发送消息链（含装饰钩子）。"""
         processed_chain_list = await self._trigger_decorating_hooks(
             session_id, components
         )
         if not processed_chain_list:
-            return
+            return False
 
         # 将处理后的组件列表封装为统一消息链对象
         chain = MessageChain(processed_chain_list)
@@ -323,7 +323,7 @@ class SenderMixin:
             # 无法解析则使用核心 API 兜底
             await self.context.send_message(session_id, chain)
             await self._persist_proactive_message_to_platform_history(session_id, chain)
-            return
+            return True
 
         p_id, m_type_str, t_id = parsed
         m_type = (
@@ -342,11 +342,11 @@ class SenderMixin:
             )
             await self.context.send_message(session_id, chain)
             await self._persist_proactive_message_to_platform_history(session_id, chain)
-            return
+            return True
 
         if target_platform.status != PlatformStatus.RUNNING:
             logger.warning(f"[主动消息] 平台 {p_id} 未运行喵，跳过主动消息喵。")
-            return
+            return False
 
         try:
             session_obj = MS(platform_name=p_id, message_type=m_type, session_id=t_id)
@@ -356,6 +356,7 @@ class SenderMixin:
                 await self._persist_proactive_message_to_platform_history(
                     session_id, chain
                 )
+            return True
         except Exception as e:
             logger.error(f"[主动消息] 通过平台 {p_id} 发送失败喵: {e}")
             logger.debug(traceback.format_exc())
@@ -369,6 +370,7 @@ class SenderMixin:
                         )
                     )
                 )
+            return False
 
     async def _send_proactive_message(self, session_id: str, text: str) -> None:
         """发送主动消息（支持TTS与分段）。"""
@@ -388,6 +390,7 @@ class SenderMixin:
 
         # 先尝试 TTS：成功后是否继续发文本由 always_send_text 控制
         is_tts_sent = False
+        is_text_sent = False
         if tts_conf.get("enable_tts", True):
             try:
                 logger.info("[主动消息] 尝试进行手动TTS喵。")
@@ -395,10 +398,9 @@ class SenderMixin:
                 if tts_provider:
                     audio_path = await tts_provider.get_audio(text)
                     if audio_path:
-                        await self._send_chain_with_hooks(
+                        is_tts_sent = await self._send_chain_with_hooks(
                             session_id, [Record(file=audio_path)]
                         )
-                        is_tts_sent = True
                         await asyncio.sleep(0.5)
             except Exception as e:
                 logger.error(f"[主动消息] 手动TTS流程发生异常喵: {e}")
@@ -459,13 +461,22 @@ class SenderMixin:
 
                 # 分段顺序发送，段间按策略等待，模拟自然输出节奏
                 for idx, seg in enumerate(segments):
-                    await self._send_chain_with_hooks(session_id, [Plain(text=seg)])
+                    is_text_sent = (
+                        await self._send_chain_with_hooks(
+                            session_id,
+                            [Plain(text=seg)],
+                        )
+                        or is_text_sent
+                    )
                     if idx < len(segments) - 1:
                         interval = await self._calc_interval(seg, seg_conf)
                         logger.debug(f"[主动消息] 分段回复等待 {interval:.2f} 秒喵。")
                         await asyncio.sleep(interval)
             else:
-                await self._send_chain_with_hooks(session_id, [Plain(text=text)])
+                is_text_sent = await self._send_chain_with_hooks(
+                    session_id,
+                    [Plain(text=text)],
+                )
                 if self.telemetry and self.telemetry.enabled:
                     # 非分段文本发送同样记录统一的发送统计，便于后续比较不同发送策略的使用占比。
                     self._track_task(
@@ -488,6 +499,17 @@ class SenderMixin:
                             )
                         )
                     )
+
+        if is_tts_sent or is_text_sent:
+            cached = await self._cache_runtime_bot_message_direct(
+                session_id=session_id,
+                text=text,
+                source="proactive_send",
+            )
+            if cached:
+                logger.info(
+                    f"[主动消息] 已记录本次主动发送内容：{self._get_session_log_str(session_id, session_config)}。"
+                )
 
         # Bot 在群聊发言后需要重置沉默计时
         if "group" in session_id.lower():
