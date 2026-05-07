@@ -158,6 +158,30 @@ class FakeConversationManager:
         del unified_msg_origin
         return self.conversations.get(conversation_id)
 
+    async def add_message_pair(
+        self,
+        cid: str,
+        user_message,
+        assistant_message,
+    ) -> None:
+        conversation = self.conversations.setdefault(cid, FakeConversation([]))
+        history = conversation.history
+        if isinstance(history, str):
+            history = []
+        history.append(
+            {
+                "role": "user",
+                "content": [{"text": user_message.content[0].text}],
+            }
+        )
+        history.append(
+            {
+                "role": "assistant",
+                "content": [{"text": assistant_message.content[0].text}],
+            }
+        )
+        conversation.history = history
+
 
 class FakePersonaManager:
     async def get_default_persona_v3(self, umo: str) -> dict:
@@ -189,6 +213,8 @@ class SenderHarness(SenderMixin, RuntimeCacheHarness):
                 "segmented_reply_settings": {"enable": False},
             },
         )
+
+
 
 
 @pytest.mark.asyncio

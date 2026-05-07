@@ -538,7 +538,8 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         assert normalized_conv_id == raw_conv_id
 
         await plugin._finalize_and_reschedule(
-            session_id=request["session_id"],
+            state_session_id=normalized_session_id,
+            delivery_session_id=request["session_id"],
             conv_id=request["conv_id"],
             user_prompt="系统任务生成的主动开场白",
             assistant_response="这是主动发出去的消息",
@@ -561,6 +562,141 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         assert history[-2]["content"][0]["text"] == "系统任务生成的主动开场白"
         assert history[-1]["role"] == "assistant"
         assert history[-1]["content"][0]["text"] == "这是主动发出去的消息"
+        assert plugin.session_data[normalized_session_id]["unanswered_count"] == 1
+        assert raw_session_id not in plugin.session_data or "unanswered_count" not in plugin.session_data.get(raw_session_id, {})
+        assert plugin.scheduler.jobs[-1]["id"] == normalized_session_id
+        assert plugin.scheduler.jobs[-1]["args"] == [normalized_session_id]
+    finally:
+        if str(astrbot_root) in sys.path:
+            sys.path.remove(str(astrbot_root))
+
+
+@pytest.mark.asyncio
+async def test_local_astrbot_check_and_chat_uses_normalized_state_for_new_message_detection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    plugin_source_root = Path(__file__).resolve().parents[1]
+    astrbot_root = tmp_path / "astrbot_root"
+    plugin_store_path = astrbot_root / "data" / "plugins"
+    config_path = astrbot_root / "data" / "config"
+    plugin_target_path = plugin_store_path / "astrbot_plugin_proactive_chat"
+
+    plugin_store_path.mkdir(parents=True, exist_ok=True)
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "astrbot_plugin_proactive_chat_config.json").write_text(
+        json.dumps(
+            {
+                "web_admin": {"enabled": False},
+                "notification_settings": {"enabled": False},
+                "telemetry_config": {"enabled": False},
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    shutil.copytree(
+        plugin_source_root,
+        plugin_target_path,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".pytest_cache",
+            "__pycache__",
+            "tests",
+        ),
+    )
+
+    monkeypatch.setenv("ASTRBOT_ROOT", str(astrbot_root))
+    sys.path.insert(0, str(astrbot_root))
+    try:
+        context = MockContext()
+        plugin_manager = PluginManager(cast(Any, context), cast(Any, {}))
+        monkeypatch.setattr(plugin_manager, "plugin_store_path", str(plugin_store_path))
+        monkeypatch.setattr(
+            "astrbot.core.star.star_manager.get_astrbot_plugin_path",
+            lambda: str(plugin_store_path),
+        )
+
+        success, error = await plugin_manager.load(
+            specified_dir_name="astrbot_plugin_proactive_chat",
+        )
+
+        assert success is True
+        assert error is None
+        metadata = next(
+            star
+            for star in star_registry
+            if star.root_dir_name == "astrbot_plugin_proactive_chat"
+        )
+        plugin = metadata.star_cls
+        assert plugin is not None
+
+        raw_session_id = "aiocqhttp:FriendMessage:90002"
+        normalized_session_id = "default:FriendMessage:90002"
+
+        plugin.timezone = ZoneInfo("Asia/Shanghai")
+        plugin.data_lock = asyncio.Lock()
+        plugin.scheduler = FakeScheduler()
+        plugin.context.get_using_tts_provider = lambda umo=None: None
+        plugin._normalize_session_id = MethodType(
+            lambda self, sid: (
+                normalized_session_id
+                if sid in {raw_session_id, normalized_session_id}
+                else sid
+            ),
+            plugin,
+        )
+
+        def _get_session_config(self, sid: str) -> dict:
+            if sid != normalized_session_id:
+                return {}
+            return {
+                "enable": True,
+                "_session_type": "private",
+                "tts_settings": {"enable_tts": False, "always_send_text": True},
+                "segmented_reply_settings": {"enable": False},
+                "context_settings": {
+                    "source_mode": "conversation_history",
+                },
+                "schedule_settings": {
+                    "quiet_hours": "0",
+                    "min_interval_minutes": 30,
+                    "max_interval_minutes": 30,
+                    "max_unanswered_times": 3,
+                },
+            }
+
+        plugin._get_session_config = MethodType(_get_session_config, plugin)
+        plugin.session_data[normalized_session_id] = {
+            "last_event_umo": raw_session_id,
+            "unanswered_count": 0,
+        }
+        plugin.last_message_times[normalized_session_id] = 0
+        plugin._prepare_llm_request = AsyncMock(
+            return_value={
+                "conv_id": "conv-ignored",
+                "history": [],
+                "system_prompt": "system",
+                "session_id": raw_session_id,
+            }
+        )
+
+        async def _generate(*args, **kwargs):
+            del args, kwargs
+            plugin.last_message_times[normalized_session_id] = 99
+            return "生成中的主动消息", "生成提示"
+
+        plugin._generate_llm_response = AsyncMock(side_effect=_generate)
+        plugin._send_proactive_message = AsyncMock()
+        plugin._finalize_and_reschedule = AsyncMock()
+        plugin._schedule_next_chat_and_save = AsyncMock()
+
+        await plugin.check_and_chat(normalized_session_id)
+
+        plugin._send_proactive_message.assert_not_awaited()
+        plugin._finalize_and_reschedule.assert_not_awaited()
     finally:
         if str(astrbot_root) in sys.path:
             sys.path.remove(str(astrbot_root))
