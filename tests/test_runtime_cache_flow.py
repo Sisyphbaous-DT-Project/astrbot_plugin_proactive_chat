@@ -49,6 +49,7 @@ class RuntimeCacheHarness(RuntimeContextCacheMixin):
     def __init__(self, data_dir: Path | None = None) -> None:
         self.runtime_context_cache = RuntimeContextCache()
         self.timezone = ZoneInfo("Asia/Shanghai")
+        self.telemetry = None
         self.session_data: dict = {}
         self._session_configs: dict[str, dict] = {}
         self.config: dict = {}
@@ -116,6 +117,56 @@ class HistoryHarness(LlmMixin, RuntimeCacheHarness):
             unanswered_count,
         )
         return None, 0, 0
+
+
+class FakeConversation:
+    def __init__(self, history: list | str | None = None) -> None:
+        self.history = history or []
+        self.persona_id = None
+
+
+class FakeConversationManager:
+    def __init__(self) -> None:
+        self.current: dict[str, str] = {}
+        self.conversations: dict[str, FakeConversation] = {}
+        self.switch_calls: list[tuple[str, str]] = []
+        self.created_for: list[str] = []
+
+    async def get_curr_conversation_id(self, unified_msg_origin: str) -> str | None:
+        return self.current.get(unified_msg_origin)
+
+    async def new_conversation(self, unified_msg_origin: str) -> str:
+        conv_id = f"conv-{len(self.conversations) + 1}"
+        self.current[unified_msg_origin] = conv_id
+        self.conversations[conv_id] = FakeConversation([])
+        self.created_for.append(unified_msg_origin)
+        return conv_id
+
+    async def switch_conversation(
+        self,
+        unified_msg_origin: str,
+        conversation_id: str,
+    ) -> None:
+        self.current[unified_msg_origin] = conversation_id
+        self.switch_calls.append((unified_msg_origin, conversation_id))
+
+    async def get_conversation(
+        self,
+        unified_msg_origin: str,
+        conversation_id: str,
+    ) -> FakeConversation | None:
+        del unified_msg_origin
+        return self.conversations.get(conversation_id)
+
+
+class FakePersonaManager:
+    async def get_default_persona_v3(self, umo: str) -> dict:
+        del umo
+        return {"prompt": "默认人格"}
+
+    async def get_persona(self, persona_id: str):
+        del persona_id
+        return None
 
 
 class SenderHarness(SenderMixin, RuntimeCacheHarness):
@@ -298,6 +349,47 @@ async def test_event_cache_cache_only_returns_empty_without_records() -> None:
     )
 
     assert effective_history == []
+
+
+@pytest.mark.asyncio
+async def test_prepare_llm_request_uses_last_event_umo_conversation() -> None:
+    plugin = HistoryHarness()
+    normalized_session = "default:FriendMessage:70001"
+    raw_event_session = "aiocqhttp:FriendMessage:70001"
+    conv_id = "conv-raw"
+
+    plugin.session_data[normalized_session] = {
+        "last_event_umo": raw_event_session,
+        "unanswered_count": 0,
+    }
+    plugin._session_configs[normalized_session] = {
+        "enable": True,
+        "context_settings": {
+            "source_mode": "conversation_history",
+        },
+    }
+    plugin._session_configs[raw_event_session] = plugin._session_configs[
+        normalized_session
+    ]
+
+    conv_mgr = FakeConversationManager()
+    conv_mgr.current[raw_event_session] = conv_id
+    conv_mgr.conversations[conv_id] = FakeConversation(
+        [{"role": "user", "content": "用户真实对话历史"}]
+    )
+    plugin.context = SimpleNamespace(
+        conversation_manager=conv_mgr,
+        persona_manager=FakePersonaManager(),
+    )
+
+    request = await plugin._prepare_llm_request(normalized_session)
+
+    assert request is not None
+    assert request["conv_id"] == conv_id
+    assert request["session_id"] == raw_event_session
+    assert conv_mgr.current[raw_event_session] == conv_id
+    assert conv_mgr.current[normalized_session] == conv_id
+    assert request["history"] == [{"role": "user", "content": "用户真实对话历史"}]
 
 
 @pytest.mark.asyncio

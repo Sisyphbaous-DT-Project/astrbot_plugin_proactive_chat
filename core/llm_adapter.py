@@ -62,6 +62,56 @@ class LlmMixin:
                 normalized.add(item.lower())
         return normalized or set(self.DEFAULT_BOT_IDENTIFIERS)
 
+    def _build_conversation_session_candidates(self, session_id: str) -> list[str]:
+        """构造 AstrBot conversation 查询候选，优先对齐真实事件 UMO。"""
+        candidates: list[str] = []
+
+        def _append(value: Any) -> None:
+            text = str(value or "").strip()
+            if text and text not in candidates:
+                candidates.append(text)
+
+        try:
+            normalized_session_id = self._normalize_session_id(session_id)
+        except Exception:
+            normalized_session_id = session_id
+
+        session_data = getattr(self, "session_data", {})
+        state_candidates = []
+        if isinstance(session_data, dict):
+            state_candidates.extend(
+                [
+                    session_data.get(normalized_session_id, {}),
+                    session_data.get(session_id, {}),
+                ]
+            )
+        for state in state_candidates:
+            if isinstance(state, dict):
+                _append(state.get("last_event_umo"))
+
+        _append(session_id)
+        _append(normalized_session_id)
+        return candidates
+
+    async def _sync_conversation_aliases(
+        self,
+        conv_id: str,
+        session_ids: list[str],
+    ) -> None:
+        """让同一会话的真实 UMO 与规范化 UMO 指向同一个 conversation。"""
+        conv_mgr = getattr(self.context, "conversation_manager", None)
+        switcher = getattr(conv_mgr, "switch_conversation", None)
+        if not callable(switcher):
+            return
+
+        for session_id in session_ids:
+            try:
+                await switcher(session_id, conv_id)
+            except Exception as e:
+                logger.debug(
+                    f"[主动消息] 同步对话映射失败：{self._get_session_log_str(session_id)} -> {conv_id}，错误：{e}"
+                )
+
     def _sanitize_history_content(self, history: list) -> list:
         """清洗历史消息内容，确保所有内容均为纯文本字符串喵。"""
         sanitized_history = []
@@ -657,18 +707,10 @@ class LlmMixin:
         """准备 LLM 请求所需的上下文、人格和最终 Prompt。"""
         try:
             # 获取当前会话的对话 ID
-            # 候选列表：优先原始 session_id，再尝试规范化 ID
-            candidate_session_ids = [session_id]
-            try:
-                normalized_session_id = self._normalize_session_id(session_id)
-            except Exception:
-                normalized_session_id = session_id
-
-            if (
-                normalized_session_id
-                and normalized_session_id not in candidate_session_ids
-            ):
-                candidate_session_ids.append(normalized_session_id)
+            # 候选列表：优先真实事件 UMO，再尝试调度传入值和规范化 ID
+            candidate_session_ids = self._build_conversation_session_candidates(
+                session_id
+            )
 
             conv_id = None
             effective_session_id = session_id
@@ -688,8 +730,9 @@ class LlmMixin:
                     f"[主动消息] {self._get_session_log_str(session_id)} 是新会话，尝试创建新对话喵。"
                 )
                 try:
+                    effective_session_id = candidate_session_ids[0]
                     conv_id = await self.context.conversation_manager.new_conversation(
-                        session_id
+                        effective_session_id
                     )
                     logger.info(f"[主动消息] 新对话创建成功喵，ID: {conv_id}")
                 except ValueError:
@@ -703,6 +746,12 @@ class LlmMixin:
                     f"[主动消息] 无法获取或创建 {self._get_session_log_str(session_id)} 的对话 ID，跳过本次任务喵。"
                 )
                 return None
+
+            await self._sync_conversation_aliases(conv_id, candidate_session_ids)
+            logger.info(
+                f"[主动消息] 当前对话映射：使用 {self._get_session_log_str(effective_session_id)}，"
+                f"conv_id={conv_id}，候选会话数={len(candidate_session_ids)}。"
+            )
 
             # 拉取对话历史（可能是字符串化 JSON，也可能是对象列表）
             conversation = await self.context.conversation_manager.get_conversation(

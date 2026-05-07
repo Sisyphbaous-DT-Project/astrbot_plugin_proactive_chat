@@ -51,9 +51,11 @@ class EventsMixin:
                 del self.session_data[session_id]
 
             if current_time >= self.plugin_start_time:
-                self.session_data.setdefault(normalized_session_id, {})[
-                    "last_message_time"
-                ] = current_time
+                session_payload = self.session_data.setdefault(
+                    normalized_session_id, {}
+                )
+                session_payload["last_message_time"] = current_time
+                session_payload["last_event_umo"] = session_id
 
         # 取消自动触发：同时处理原键与规范化键，避免漏取消
         auto_trigger_cancelled = await self._cancel_all_related_auto_triggers(
@@ -153,8 +155,10 @@ class EventsMixin:
         except Exception as e:
             logger.debug(f"[主动消息] 获取群聊发送者ID失败喵: {e}")
 
-        self_id = event.get_self_id() or self.session_data.get(session_id, {}).get(
-            "self_id"
+        self_id = (
+            event.get_self_id()
+            or self.session_data.get(session_id, {}).get("self_id")
+            or self.session_data.get(normalized_session_id, {}).get("self_id")
         )
         if self_id and sender_id and str(sender_id) == str(self_id):
             logger.debug(
@@ -183,9 +187,11 @@ class EventsMixin:
                 del self.session_data[session_id]
 
             if current_time >= self.plugin_start_time:
-                self.session_data.setdefault(normalized_session_id, {})[
-                    "last_message_time"
-                ] = current_time
+                session_payload = self.session_data.setdefault(
+                    normalized_session_id, {}
+                )
+                session_payload["last_message_time"] = current_time
+                session_payload["last_event_umo"] = session_id
                 logger.debug(
                     f"[主动消息] 已记录插件启动后 {self._get_session_log_str(session_id)} 的消息时间喵 -> {current_time}"
                 )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import time
 from datetime import datetime
@@ -77,7 +78,29 @@ class ProactiveCoreMixin:
                 user_message=user_msg_obj,
                 assistant_message=assistant_msg_obj,
             )
-            logger.info("[主动消息] 已成功将本次主动消息存档至对话历史喵。")
+            conversation = await self.context.conversation_manager.get_conversation(
+                session_id,
+                conv_id,
+            )
+            history_len = 0
+            last_role = "未知"
+            if conversation and conversation.history:
+                history = conversation.history
+                if isinstance(history, str):
+                    try:
+                        history = json.loads(history)
+                    except Exception:
+                        history = []
+                if isinstance(history, list):
+                    history_len = len(history)
+                    if history:
+                        last = history[-1]
+                        if isinstance(last, dict):
+                            last_role = str(last.get("role") or "未知")
+            logger.info(
+                f"[主动消息] 已成功将本次主动消息存档至对话历史喵，conv_id={conv_id}，"
+                f"当前历史 {history_len} 条，最后一条角色：{last_role}。"
+            )
         except Exception as e:
             logger.error(f"[主动消息] 存档对话历史失败喵: {e}")
             logger.warning("[主动消息] 对话存档失败喵，但会继续执行后续步骤喵。")
