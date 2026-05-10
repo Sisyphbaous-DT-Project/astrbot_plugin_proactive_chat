@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import errno
 import json
 import math
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import time
@@ -54,6 +57,20 @@ def _is_running_in_docker() -> bool:
 
     # 额外兼容某些自定义镜像通过环境变量主动标记容器场景的做法。
     return os.environ.get("DOCKER_CONTAINER") == "true"
+
+
+def _can_bind_host_port(host: str, port: int) -> tuple[bool, str]:
+    """检查 Web 管理端端口是否可绑定，避免 Uvicorn 失败路径影响主进程。"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((host, port))
+        return True, ""
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            return False, f"{host}:{port} 已被占用"
+        return False, str(e)
+    finally:
+        sock.close()
 
 
 class WebAdminServer:
@@ -1281,8 +1298,26 @@ class WebAdminServer:
             logger.info("[主动消息] Web 管理端未启用喵。")
             return
 
-        host = web_admin.get("host", "127.0.0.1")
-        port = int(web_admin.get("port", 4100))
+        if self.server_task and not self.server_task.done():
+            logger.warning("[主动消息] Web 管理端已在运行喵，跳过重复启动。")
+            return
+
+        host = str(web_admin.get("host", "127.0.0.1") or "127.0.0.1")
+        try:
+            port = int(web_admin.get("port", 4100))
+        except (TypeError, ValueError):
+            logger.warning("[主动消息] Web 管理端端口配置无效喵，已自动禁用 Web 管理端。")
+            return
+
+        ok, reason = _can_bind_host_port(host, port)
+        if not ok:
+            logger.warning(
+                "[主动消息] Web 管理端未启动喵: "
+                f"{reason}。主动消息主体功能不受影响；请关闭重复插件或修改 web_admin.port。"
+            )
+            self.server = None
+            self.server_task = None
+            return
 
         # 采用 Uvicorn 内嵌启动，便于作为插件内部协程任务运行。
         uv_cfg = uvicorn.Config(
@@ -1297,6 +1332,18 @@ class WebAdminServer:
         async def _serve():
             try:
                 await self.server.serve()
+            except SystemExit as e:
+                logger.warning(
+                    "[主动消息] Web 管理端启动失败并触发 SystemExit 喵，"
+                    f"已自动隔离，不影响插件主体功能: {e}"
+                )
+            except OSError as e:
+                logger.warning(
+                    "[主动消息] Web 管理端启动失败喵，已自动禁用，不影响插件主体功能: "
+                    f"{e}"
+                )
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error(f"[主动消息] Web 管理端运行异常喵: {e}")
 
@@ -1322,11 +1369,20 @@ class WebAdminServer:
 
         # 略等一个事件循环切片，让服务有机会完成绑定后再打印启动日志。
         await asyncio.sleep(0.1)
+        if self.server_task.done():
+            self.server = None
+            self.server_task = None
+            logger.warning("[主动消息] Web 管理端未能保持运行喵，已自动禁用。")
+            return
+
         logger.info(f"[主动消息] Web 管理端已启动喵: http://{host}:{port}")
 
     async def stop(self) -> None:
         if self._token_cleanup_task:
             self._token_cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._token_cleanup_task
+            self._token_cleanup_task = None
         if self.server:
             # 通知 Uvicorn 进入优雅退出流程。
             self.server.should_exit = True
@@ -1335,8 +1391,18 @@ class WebAdminServer:
             try:
                 # 最多等待 5 秒，避免插件卸载时无限阻塞。
                 await asyncio.wait_for(self.server_task, timeout=5)
-            except Exception:
-                pass
+            except asyncio.TimeoutError:
+                self.server_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self.server_task
+            except asyncio.CancelledError:
+                if not self.server_task.cancelled():
+                    raise
+            except Exception as e:
+                logger.debug(f"[主动消息] 等待 Web 管理端停止时出现异常喵: {e}")
+
+        self.server = None
+        self.server_task = None
 
         self._ws_connections.clear()
         logger.info("[主动消息] Web 管理端已停止喵。")

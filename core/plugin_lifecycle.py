@@ -141,6 +141,18 @@ class LifecycleMixin:
         try:
             if self.web_admin_server:
                 await self.web_admin_server.start()
+        except (SystemExit, OSError) as e:
+            logger.error(f"[主动消息] Web 管理端启动失败喵，已隔离处理: {e}")
+            if self.telemetry and self.telemetry.enabled:
+                # Web 管理端属于附加能力，错误会上报但不会阻断插件主体运行。
+                self._track_task(
+                    asyncio.create_task(
+                        self.telemetry.track_error(
+                            e,
+                            module="core.plugin_lifecycle.initialize.web_admin_server",
+                        )
+                    )
+                )
         except Exception as e:
             logger.error(f"[主动消息] Web 管理端启动失败喵: {e}")
             if self.telemetry and self.telemetry.enabled:
