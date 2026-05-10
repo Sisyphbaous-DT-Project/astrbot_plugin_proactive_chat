@@ -102,6 +102,7 @@ class ProactiveChatPlugin(
         self._start_time: float = 0.0
         # 保存原 asyncio 全局异常处理器，以便插件卸载时恢复原状。
         self._original_exception_handler = None
+        self._exception_handler_installed = False
 
         # 群聊沉默倒计时与自动触发计时器
         self.group_timers: dict[str, asyncio.TimerHandle] = {}

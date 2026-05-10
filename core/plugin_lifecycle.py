@@ -190,7 +190,7 @@ class LifecycleMixin:
                 # 再清理其余挂起的 telemetry tasks，避免遗留后台任务。
                 await self._cleanup_telemetry_tasks()
 
-            if self._exception_handler_installed:
+            if getattr(self, "_exception_handler_installed", False):
                 loop = asyncio.get_running_loop()
                 # 恢复条件取决于“是否曾经接管过异常处理器”，
                 # 而不是 terminate 时 telemetry 的当前启用状态。
