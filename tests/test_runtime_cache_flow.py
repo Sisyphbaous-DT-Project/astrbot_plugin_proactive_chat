@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -135,7 +136,12 @@ class FakeConversationManager:
     async def get_curr_conversation_id(self, unified_msg_origin: str) -> str | None:
         return self.current.get(unified_msg_origin)
 
-    async def new_conversation(self, unified_msg_origin: str) -> str:
+    async def new_conversation(
+        self,
+        unified_msg_origin: str,
+        platform_id: str | None = None,
+    ) -> str:
+        del platform_id
         conv_id = f"conv-{len(self.conversations) + 1}"
         self.current[unified_msg_origin] = conv_id
         self.conversations[conv_id] = FakeConversation([])
@@ -154,9 +160,26 @@ class FakeConversationManager:
         self,
         unified_msg_origin: str,
         conversation_id: str,
+        create_if_not_exists: bool = False,
     ) -> FakeConversation | None:
         del unified_msg_origin
-        return self.conversations.get(conversation_id)
+        conversation = self.conversations.get(conversation_id)
+        if conversation is None and create_if_not_exists:
+            conversation = FakeConversation([])
+            self.conversations[conversation_id] = conversation
+        return conversation
+
+    async def update_conversation(
+        self,
+        unified_msg_origin: str,
+        conversation_id: str | None = None,
+        history: list[dict] | None = None,
+    ) -> None:
+        conv_id = conversation_id or self.current.get(unified_msg_origin)
+        if not conv_id:
+            return
+        conversation = self.conversations.setdefault(conv_id, FakeConversation([]))
+        conversation.history = history or []
 
     async def add_message_pair(
         self,
@@ -441,6 +464,52 @@ async def test_send_proactive_message_records_runtime_cache_after_success() -> N
     assert records[0].text == "测试主动消息写入缓存"
     assert records[0].role == "assistant"
     assert records[0].source == "proactive_send"
+
+
+@pytest.mark.asyncio
+async def test_send_proactive_message_appends_assistant_to_astrbot_conversation() -> None:
+    plugin = SenderHarness()
+    raw_session_id = "aiocqhttp:FriendMessage:40002"
+    normalized_session_id = "default:FriendMessage:40002"
+    plugin._session_configs[normalized_session_id] = {
+        "enable": True,
+        "_session_type": "private",
+        "tts_settings": {"enable_tts": False, "always_send_text": True},
+        "segmented_reply_settings": {"enable": False},
+    }
+    plugin._normalize_session_id = lambda sid: (
+        normalized_session_id if sid in {raw_session_id, normalized_session_id} else sid
+    )
+
+    conv_mgr = FakeConversationManager()
+    conv_id = await conv_mgr.new_conversation(raw_session_id, platform_id="aiocqhttp")
+    conv_mgr.conversations[conv_id].history = json.dumps(
+        [{"role": "user", "content": "之前的用户消息"}],
+        ensure_ascii=False,
+    )
+    plugin.session_data[normalized_session_id] = {"last_event_umo": raw_session_id}
+    plugin.context = SimpleNamespace(
+        get_using_tts_provider=lambda umo=None: None,
+        conversation_manager=conv_mgr,
+    )
+
+    await plugin._send_proactive_message(normalized_session_id, "这是一条主动消息")
+
+    plugin._send_chain_with_hooks.assert_awaited_once()
+    assert conv_mgr.current[raw_session_id] == conv_id
+    assert conv_mgr.current[normalized_session_id] == conv_id
+    history = conv_mgr.conversations[conv_id].history
+    assert history == [
+        {"role": "user", "content": "之前的用户消息"},
+        {"role": "assistant", "content": "这是一条主动消息"},
+    ]
+
+    written_again = await plugin._persist_proactive_message_to_conversation_history(
+        normalized_session_id,
+        "这是一条主动消息",
+    )
+    assert written_again is False
+    assert conv_mgr.conversations[conv_id].history == history
 
 
 @pytest.mark.asyncio

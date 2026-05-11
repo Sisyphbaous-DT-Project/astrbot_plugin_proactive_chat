@@ -10,11 +10,6 @@ from datetime import datetime
 from typing import Any
 
 from astrbot.api import logger
-from astrbot.core.agent.message import (
-    AssistantMessageSegment,
-    TextPart,
-    UserMessageSegment,
-)
 
 from ..utils.time_utils import is_quiet_time
 
@@ -69,16 +64,6 @@ class ProactiveCoreMixin:
     ) -> None:
         """主动消息任务完成后的收尾工作。"""
         try:
-            # 存档对话历史（使用新对话管理 API）
-            user_msg_obj = UserMessageSegment(content=[TextPart(text=user_prompt)])
-            assistant_msg_obj = AssistantMessageSegment(
-                content=[TextPart(text=assistant_response)]
-            )
-            await self.context.conversation_manager.add_message_pair(
-                cid=conv_id,
-                user_message=user_msg_obj,
-                assistant_message=assistant_msg_obj,
-            )
             conversation = await self.context.conversation_manager.get_conversation(
                 delivery_session_id,
                 conv_id,
@@ -99,12 +84,11 @@ class ProactiveCoreMixin:
                         if isinstance(last, dict):
                             last_role = str(last.get("role") or "未知")
             logger.info(
-                f"[主动消息] 已成功将本次主动消息存档至对话历史喵，conv_id={conv_id}，"
+                f"[主动消息] 主动消息发送后的对话历史状态喵，conv_id={conv_id}，"
                 f"当前历史 {history_len} 条，最后一条角色：{last_role}。"
             )
         except Exception as e:
-            logger.error(f"[主动消息] 存档对话历史失败喵: {e}")
-            logger.warning("[主动消息] 对话存档失败喵，但会继续执行后续步骤喵。")
+            logger.debug(f"[主动消息] 检查对话历史状态失败喵: {e}", exc_info=True)
 
         parsed = self._parse_session_id(state_session_id)
         is_private_session = parsed and (

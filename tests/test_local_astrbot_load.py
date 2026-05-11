@@ -537,6 +537,11 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         )
         assert normalized_conv_id == raw_conv_id
 
+        await plugin._send_proactive_message(
+            request["session_id"],
+            "这是主动发出去的消息",
+        )
+
         await plugin._finalize_and_reschedule(
             state_session_id=normalized_session_id,
             delivery_session_id=request["session_id"],
@@ -558,10 +563,14 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         )
         assert conversation is not None
         history = json.loads(conversation.history)
-        assert history[-2]["role"] == "user"
-        assert history[-2]["content"][0]["text"] == "系统任务生成的主动开场白"
         assert history[-1]["role"] == "assistant"
-        assert history[-1]["content"][0]["text"] == "这是主动发出去的消息"
+        assert history[-1]["content"] == "这是主动发出去的消息"
+        assert not any(
+            item.get("role") == "user"
+            and item.get("content") == [{"type": "text", "text": "系统任务生成的主动开场白"}]
+            for item in history
+            if isinstance(item, dict)
+        )
         assert plugin.session_data[normalized_session_id]["unanswered_count"] == 1
         assert raw_session_id not in plugin.session_data or "unanswered_count" not in plugin.session_data.get(raw_session_id, {})
         assert plugin.scheduler.jobs[-1]["id"] == normalized_session_id

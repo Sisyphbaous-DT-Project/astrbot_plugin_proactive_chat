@@ -11,23 +11,33 @@ import pytest
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN_ROOT.parent))
 
-astrbot_module = types.ModuleType("astrbot")
-astrbot_api_module = types.ModuleType("astrbot.api")
-astrbot_star_module = types.ModuleType("astrbot.api.star")
-astrbot_star_module.Context = object
-astrbot_api_module.logger = SimpleNamespace(
-    debug=lambda *_args, **_kwargs: None,
-    info=lambda *_args, **_kwargs: None,
-    warning=lambda *_args, **_kwargs: None,
-    error=lambda *_args, **_kwargs: None,
-)
-astrbot_api_module.star = astrbot_star_module
-sys.modules.setdefault("astrbot", astrbot_module)
-sys.modules.setdefault("astrbot.api", astrbot_api_module)
-sys.modules.setdefault("astrbot.api.star", astrbot_star_module)
+try:
+    from astrbot.api.star import Context as _AstrBotContext  # noqa: F401
+except Exception:
+    astrbot_module = types.ModuleType("astrbot")
+    astrbot_api_module = types.ModuleType("astrbot.api")
+    astrbot_star_module = types.ModuleType("astrbot.api.star")
+    astrbot_star_module.Context = object
 
-from astrbot_plugin_proactive_chat.core.plugin_lifecycle import LifecycleMixin
-from astrbot_plugin_proactive_chat.core import web_admin_server
+    class _FakeStarTools:
+        @staticmethod
+        def get_data_dir(_plugin_name: str) -> Path:
+            return PLUGIN_ROOT / ".pytest_plugin_data"
+
+    astrbot_star_module.StarTools = _FakeStarTools
+    astrbot_api_module.logger = SimpleNamespace(
+        debug=lambda *_args, **_kwargs: None,
+        info=lambda *_args, **_kwargs: None,
+        warning=lambda *_args, **_kwargs: None,
+        error=lambda *_args, **_kwargs: None,
+    )
+    astrbot_api_module.star = astrbot_star_module
+    sys.modules.setdefault("astrbot", astrbot_module)
+    sys.modules.setdefault("astrbot.api", astrbot_api_module)
+    sys.modules.setdefault("astrbot.api.star", astrbot_star_module)
+
+from astrbot_plugin_proactive_chat.core.plugin_lifecycle import LifecycleMixin  # noqa: E402
+from astrbot_plugin_proactive_chat.core import web_admin_server  # noqa: E402
 
 
 def _make_plugin(port: int) -> SimpleNamespace:

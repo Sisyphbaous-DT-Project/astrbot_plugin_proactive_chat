@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import random
 import re
@@ -308,6 +309,236 @@ class SenderMixin:
         except Exception as e:
             logger.warning(f"[主动消息] 补写平台流水失败喵: {e}", exc_info=True)
 
+    def _extract_history_content_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        parts.append(str(item.get("text") or ""))
+                    elif "text" in item:
+                        parts.append(str(item.get("text") or ""))
+                elif hasattr(item, "text"):
+                    parts.append(str(getattr(item, "text") or ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts).strip()
+        return str(content or "").strip()
+
+    def _build_sender_conversation_session_candidates(self, session_id: str) -> list[str]:
+        candidate_builder = getattr(self, "_build_conversation_session_candidates", None)
+        if callable(candidate_builder):
+            try:
+                candidates = candidate_builder(session_id)
+                if isinstance(candidates, list) and candidates:
+                    return [str(item) for item in candidates if str(item or "").strip()]
+            except Exception as e:
+                logger.debug(f"[主动消息] 构建对话候选 UMO 失败，使用发送侧兜底逻辑喵: {e}")
+
+        candidates: list[str] = []
+
+        def _append(value: Any) -> None:
+            text = str(value or "").strip()
+            if text and text not in candidates:
+                candidates.append(text)
+
+        try:
+            normalized_session_id = self._normalize_session_id(session_id)
+        except Exception:
+            normalized_session_id = session_id
+
+        session_data = getattr(self, "session_data", {})
+        if isinstance(session_data, dict):
+            for state_key in (normalized_session_id, session_id):
+                state = session_data.get(state_key, {})
+                if isinstance(state, dict):
+                    _append(state.get("last_event_umo"))
+
+        _append(session_id)
+        _append(normalized_session_id)
+        return candidates
+
+    async def _new_conversation_for_history(
+        self,
+        conv_mgr: Any,
+        session_id: str,
+    ) -> str | None:
+        platform_id = None
+        try:
+            parsed = self._parse_session_id(session_id)
+            if parsed:
+                platform_id = parsed[0]
+        except Exception:
+            platform_id = None
+
+        try:
+            return await conv_mgr.new_conversation(
+                session_id,
+                platform_id=platform_id,
+            )
+        except TypeError:
+            return await conv_mgr.new_conversation(session_id)
+
+    async def _get_conversation_for_history(
+        self,
+        conv_mgr: Any,
+        session_id: str,
+        conv_id: str,
+    ) -> Any | None:
+        try:
+            return await conv_mgr.get_conversation(
+                session_id,
+                conv_id,
+                create_if_not_exists=True,
+            )
+        except TypeError:
+            conversation = await conv_mgr.get_conversation(session_id, conv_id)
+            if conversation is None:
+                new_conv_id = await self._new_conversation_for_history(
+                    conv_mgr,
+                    session_id,
+                )
+                if not new_conv_id:
+                    return None
+                return await conv_mgr.get_conversation(session_id, new_conv_id)
+
+    async def _sync_sender_conversation_aliases(
+        self,
+        conv_id: str,
+        session_ids: list[str],
+    ) -> None:
+        syncer = getattr(self, "_sync_conversation_aliases", None)
+        if callable(syncer):
+            try:
+                await syncer(conv_id, session_ids)
+                return
+            except Exception as e:
+                logger.debug(f"[主动消息] 同步对话别名失败，使用发送侧兜底逻辑喵: {e}")
+
+        conv_mgr = getattr(self.context, "conversation_manager", None)
+        switcher = getattr(conv_mgr, "switch_conversation", None)
+        if not callable(switcher):
+            return
+
+        for session_id in session_ids:
+            try:
+                await switcher(session_id, conv_id)
+            except Exception as e:
+                logger.debug(
+                    f"[主动消息] 同步对话别名失败：{self._get_session_log_str(session_id)} -> {conv_id}，错误：{e}"
+                )
+
+    async def _persist_proactive_message_to_conversation_history(
+        self,
+        session_id: str,
+        text: str,
+    ) -> bool:
+        """Append the sent proactive text as an assistant turn in AstrBot history."""
+        normalized_text = str(text or "").strip()
+        if not normalized_text:
+            return False
+
+        conv_mgr = getattr(self.context, "conversation_manager", None)
+        if not conv_mgr:
+            logger.debug("[主动消息] 当前 AstrBot 上下文没有 conversation_manager，跳过对话历史写入喵。")
+            return False
+
+        candidates = self._build_sender_conversation_session_candidates(session_id)
+        if not candidates:
+            return False
+
+        conv_id = None
+        effective_session_id = candidates[0]
+        for candidate in candidates:
+            try:
+                candidate_conv_id = await conv_mgr.get_curr_conversation_id(candidate)
+            except Exception as e:
+                logger.debug(f"[主动消息] 读取当前对话 ID 失败：{candidate}，错误：{e}")
+                continue
+            if candidate_conv_id:
+                conv_id = candidate_conv_id
+                effective_session_id = candidate
+                break
+
+        try:
+            if not conv_id:
+                conv_id = await self._new_conversation_for_history(
+                    conv_mgr,
+                    effective_session_id,
+                )
+
+            if not conv_id:
+                logger.warning(
+                    f"[主动消息] 无法获取或创建当前对话，跳过写入 LLM 对话历史：{effective_session_id}"
+                )
+                return False
+
+            await self._sync_sender_conversation_aliases(conv_id, candidates)
+
+            conversation = await self._get_conversation_for_history(
+                conv_mgr,
+                effective_session_id,
+                conv_id,
+            )
+            if not conversation:
+                logger.warning(
+                    f"[主动消息] 无法获取当前对话，跳过写入 LLM 对话历史：{effective_session_id}"
+                )
+                return False
+
+            raw_history = getattr(conversation, "history", None) or "[]"
+            if isinstance(raw_history, str):
+                try:
+                    history = json.loads(raw_history)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        f"[主动消息] 当前对话历史 JSON 解析失败，将从空历史开始追加：{effective_session_id}",
+                        exc_info=True,
+                    )
+                    history = []
+            elif isinstance(raw_history, list):
+                history = raw_history
+            else:
+                history = []
+
+            if not isinstance(history, list):
+                history = []
+
+            if history:
+                last = history[-1]
+                if (
+                    isinstance(last, dict)
+                    and last.get("role") == "assistant"
+                    and self._extract_history_content_text(last.get("content"))
+                    == normalized_text
+                ):
+                    logger.debug(
+                        f"[主动消息] 当前对话历史末尾已存在相同主动消息，跳过重复写入：{effective_session_id}"
+                    )
+                    return False
+
+            history.append({"role": "assistant", "content": normalized_text})
+
+            await conv_mgr.update_conversation(
+                unified_msg_origin=effective_session_id,
+                conversation_id=conv_id,
+                history=history,
+            )
+
+            logger.info(
+                f"[主动消息] 已将主动消息写入 AstrBot 当前 LLM 对话历史：{effective_session_id}"
+            )
+            return True
+
+        except Exception as e:
+            logger.warning(
+                f"[主动消息] 写入 AstrBot 当前 LLM 对话历史失败：{e}",
+                exc_info=True,
+            )
+            return False
+
     async def _send_chain_with_hooks(self, session_id: str, components: list) -> bool:
         """发送消息链（含装饰钩子）。"""
         processed_chain_list = await self._trigger_decorating_hooks(
@@ -510,6 +741,11 @@ class SenderMixin:
                 logger.info(
                     f"[主动消息] 已记录本次主动发送内容：{self._get_session_log_str(session_id, session_config)}。"
                 )
+
+            await self._persist_proactive_message_to_conversation_history(
+                session_id=session_id,
+                text=text,
+            )
 
         # Bot 在群聊发言后需要重置沉默计时
         if "group" in session_id.lower():
