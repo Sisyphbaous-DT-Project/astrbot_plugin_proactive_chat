@@ -274,7 +274,20 @@ class ProactiveCoreMixin:
                 return
 
             # 发送消息与收尾
-            await self._send_proactive_message(delivery_session_id, response_text)
+            sent = await self._send_proactive_message(
+                delivery_session_id,
+                response_text,
+            )
+            if not sent:
+                await self._schedule_next_chat_and_save(state_session_id)
+                return
+
+            await self._persist_proactive_pair_to_conversation_history(
+                session_id=delivery_session_id,
+                conv_id=conv_id,
+                user_prompt=final_user_prompt,
+                assistant_response=response_text,
+            )
 
             await self._finalize_and_reschedule(
                 state_session_id,

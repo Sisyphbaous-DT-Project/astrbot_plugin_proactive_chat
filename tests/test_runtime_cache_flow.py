@@ -190,19 +190,18 @@ class FakeConversationManager:
         conversation = self.conversations.setdefault(cid, FakeConversation([]))
         history = conversation.history
         if isinstance(history, str):
-            history = []
-        history.append(
-            {
-                "role": "user",
-                "content": [{"text": user_message.content[0].text}],
+            history = json.loads(history)
+
+        def _to_dict(message):
+            if isinstance(message, dict):
+                return message
+            return {
+                "role": getattr(message, "role", ""),
+                "content": [{"text": message.content[0].text}],
             }
-        )
-        history.append(
-            {
-                "role": "assistant",
-                "content": [{"text": assistant_message.content[0].text}],
-            }
-        )
+
+        history.append(_to_dict(user_message))
+        history.append(_to_dict(assistant_message))
         conversation.history = history
 
 
@@ -452,8 +451,9 @@ async def test_send_proactive_message_records_runtime_cache_after_success() -> N
         "segmented_reply_settings": {"enable": False},
     }
 
-    await plugin._send_proactive_message(session_id, "测试主动消息写入缓存")
+    sent = await plugin._send_proactive_message(session_id, "测试主动消息写入缓存")
 
+    assert sent is True
     plugin._send_chain_with_hooks.assert_awaited_once()
     records, record_count = plugin._load_runtime_context_cache_records(
         session_id,
@@ -467,7 +467,7 @@ async def test_send_proactive_message_records_runtime_cache_after_success() -> N
 
 
 @pytest.mark.asyncio
-async def test_send_proactive_message_appends_assistant_to_astrbot_conversation() -> None:
+async def test_persist_proactive_pair_uses_selected_astrbot_conversation() -> None:
     plugin = SenderHarness()
     raw_session_id = "aiocqhttp:FriendMessage:40002"
     normalized_session_id = "default:FriendMessage:40002"
@@ -493,20 +493,28 @@ async def test_send_proactive_message_appends_assistant_to_astrbot_conversation(
         conversation_manager=conv_mgr,
     )
 
-    await plugin._send_proactive_message(normalized_session_id, "这是一条主动消息")
+    written = await plugin._persist_proactive_pair_to_conversation_history(
+        session_id=normalized_session_id,
+        conv_id=conv_id,
+        user_prompt="系统任务生成的主动开场白",
+        assistant_response="这是一条主动消息",
+    )
 
-    plugin._send_chain_with_hooks.assert_awaited_once()
+    assert written is True
     assert conv_mgr.current[raw_session_id] == conv_id
     assert conv_mgr.current[normalized_session_id] == conv_id
     history = conv_mgr.conversations[conv_id].history
     assert history == [
         {"role": "user", "content": "之前的用户消息"},
+        {"role": "user", "content": "系统任务生成的主动开场白"},
         {"role": "assistant", "content": "这是一条主动消息"},
     ]
 
-    written_again = await plugin._persist_proactive_message_to_conversation_history(
-        normalized_session_id,
-        "这是一条主动消息",
+    written_again = await plugin._persist_proactive_pair_to_conversation_history(
+        session_id=normalized_session_id,
+        conv_id=conv_id,
+        user_prompt="系统任务生成的主动开场白",
+        assistant_response="这是一条主动消息",
     )
     assert written_again is False
     assert conv_mgr.conversations[conv_id].history == history

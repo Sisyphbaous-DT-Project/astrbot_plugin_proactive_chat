@@ -508,6 +508,7 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
                     "source_mode": "conversation_history",
                 },
                 "schedule_settings": {
+                    "quiet_hours": "0",
                     "min_interval_minutes": 30,
                     "max_interval_minutes": 30,
                 },
@@ -524,32 +525,15 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
             "last_event_umo": raw_session_id,
             "unanswered_count": 0,
         }
+        plugin.last_message_times[normalized_session_id] = 0
 
-        request = await plugin._prepare_llm_request(normalized_session_id)
-        assert request is not None
-        assert request["conv_id"] == raw_conv_id
-        assert request["session_id"] == raw_session_id
+        async def _generate(*args, **kwargs):
+            del args, kwargs
+            return "这是主动发出去的消息", "系统任务生成的主动开场白"
 
-        normalized_conv_id = (
-            await plugin.context.conversation_manager.get_curr_conversation_id(
-                normalized_session_id
-            )
-        )
-        assert normalized_conv_id == raw_conv_id
+        plugin._generate_llm_response = AsyncMock(side_effect=_generate)
 
-        await plugin._send_proactive_message(
-            request["session_id"],
-            "这是主动发出去的消息",
-        )
-
-        await plugin._finalize_and_reschedule(
-            state_session_id=normalized_session_id,
-            delivery_session_id=request["session_id"],
-            conv_id=request["conv_id"],
-            user_prompt="系统任务生成的主动开场白",
-            assistant_response="这是主动发出去的消息",
-            unanswered_count=0,
-        )
+        await plugin.check_and_chat(normalized_session_id)
 
         user_side_conv_id = (
             await plugin.context.conversation_manager.get_curr_conversation_id(
@@ -563,14 +547,16 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         )
         assert conversation is not None
         history = json.loads(conversation.history)
-        assert history[-1]["role"] == "assistant"
-        assert history[-1]["content"] == "这是主动发出去的消息"
-        assert not any(
-            item.get("role") == "user"
-            and item.get("content") == [{"type": "text", "text": "系统任务生成的主动开场白"}]
-            for item in history
-            if isinstance(item, dict)
+        assert history[-2:] == [
+            {"role": "user", "content": "系统任务生成的主动开场白"},
+            {"role": "assistant", "content": "这是主动发出去的消息"},
+        ]
+
+        raw_conversations = await plugin.context.conversation_manager.get_conversations(
+            raw_session_id,
+            platform_id="aiocqhttp",
         )
+        assert [conv.cid for conv in raw_conversations] == [raw_conv_id]
         assert plugin.session_data[normalized_session_id]["unanswered_count"] == 1
         assert raw_session_id not in plugin.session_data or "unanswered_count" not in plugin.session_data.get(raw_session_id, {})
         assert plugin.scheduler.jobs[-1]["id"] == normalized_session_id

@@ -539,6 +539,109 @@ class SenderMixin:
             )
             return False
 
+    async def _persist_proactive_pair_to_conversation_history(
+        self,
+        session_id: str,
+        conv_id: str,
+        user_prompt: str,
+        assistant_response: str,
+    ) -> bool:
+        """Append the proactive prompt and sent reply to the selected conversation."""
+        assistant_text = str(assistant_response or "").strip()
+        if not assistant_text:
+            return False
+
+        user_text = str(user_prompt or "").strip() or "[主动消息触发]"
+        conv_mgr = getattr(self.context, "conversation_manager", None)
+        if not conv_mgr or not conv_id:
+            logger.warning("[主动消息] 无法写入对话历史：conversation_manager 或 conv_id 为空。")
+            return False
+
+        candidates = self._build_sender_conversation_session_candidates(session_id)
+        effective_session_id = candidates[0] if candidates else session_id
+
+        try:
+            conversation = await self._get_conversation_for_history(
+                conv_mgr,
+                effective_session_id,
+                conv_id,
+            )
+            if not conversation:
+                logger.warning(
+                    f"[主动消息] 找不到目标对话，无法写入主动消息历史：session={effective_session_id}, conv_id={conv_id}"
+                )
+                return False
+
+            raw_history = getattr(conversation, "history", None) or "[]"
+            if isinstance(raw_history, str):
+                try:
+                    history = json.loads(raw_history)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        f"[主动消息] 当前对话历史 JSON 解析失败，将从空历史开始追加：{effective_session_id}",
+                        exc_info=True,
+                    )
+                    history = []
+            elif isinstance(raw_history, list):
+                history = raw_history
+            else:
+                history = []
+
+            if not isinstance(history, list):
+                history = []
+
+            if len(history) >= 2:
+                last_user = history[-2]
+                last_assistant = history[-1]
+                if (
+                    isinstance(last_user, dict)
+                    and isinstance(last_assistant, dict)
+                    and last_user.get("role") == "user"
+                    and last_assistant.get("role") == "assistant"
+                    and self._extract_history_content_text(last_user.get("content"))
+                    == user_text
+                    and self._extract_history_content_text(
+                        last_assistant.get("content")
+                    )
+                    == assistant_text
+                ):
+                    logger.debug(
+                        f"[主动消息] 当前对话历史末尾已存在相同主动消息轮次，跳过重复写入：{effective_session_id}"
+                    )
+                    return False
+
+            add_pair = getattr(conv_mgr, "add_message_pair", None)
+            if callable(add_pair):
+                await add_pair(
+                    cid=conv_id,
+                    user_message={"role": "user", "content": user_text},
+                    assistant_message={
+                        "role": "assistant",
+                        "content": assistant_text,
+                    },
+                )
+            else:
+                history.append({"role": "user", "content": user_text})
+                history.append({"role": "assistant", "content": assistant_text})
+                await conv_mgr.update_conversation(
+                    unified_msg_origin=effective_session_id,
+                    conversation_id=conv_id,
+                    history=history,
+                )
+
+            await self._sync_sender_conversation_aliases(conv_id, candidates)
+            logger.info(
+                f"[主动消息] 已写入主动消息到 AstrBot LLM 对话历史：session={effective_session_id}, conv_id={conv_id}"
+            )
+            return True
+
+        except Exception as e:
+            logger.warning(
+                f"[主动消息] 写入主动消息到 AstrBot LLM 对话历史失败：{e}",
+                exc_info=True,
+            )
+            return False
+
     async def _send_chain_with_hooks(self, session_id: str, components: list) -> bool:
         """发送消息链（含装饰钩子）。"""
         processed_chain_list = await self._trigger_decorating_hooks(
@@ -603,14 +706,14 @@ class SenderMixin:
                 )
             return False
 
-    async def _send_proactive_message(self, session_id: str, text: str) -> None:
+    async def _send_proactive_message(self, session_id: str, text: str) -> bool:
         """发送主动消息（支持TTS与分段）。"""
         session_config = self._get_session_config(session_id)
         if not session_config:
             logger.info(
                 f"[主动消息] 无法获取会话配置，跳过 {self._get_session_log_str(session_id)} 的消息发送喵。"
             )
-            return
+            return False
 
         logger.info(
             f"[主动消息] 开始发送 {self._get_session_log_str(session_id, session_config)} 的主动消息喵。"
@@ -742,14 +845,11 @@ class SenderMixin:
                     f"[主动消息] 已记录本次主动发送内容：{self._get_session_log_str(session_id, session_config)}。"
                 )
 
-            await self._persist_proactive_message_to_conversation_history(
-                session_id=session_id,
-                text=text,
-            )
-
         # Bot 在群聊发言后需要重置沉默计时
         if "group" in session_id.lower():
             await self._reset_group_silence_timer(session_id)
             logger.info(
                 f"[主动消息] Bot主动消息已发送，已重置 {self._get_session_log_str(session_id, session_config)} 的沉默倒计时喵。"
             )
+
+        return bool(is_tts_sent or is_text_sent)
