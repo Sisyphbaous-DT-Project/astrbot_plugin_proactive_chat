@@ -238,14 +238,22 @@ class TelemetryManager:
                 if "proactive_prompt" in group_settings:
                     del group_settings["proactive_prompt"]
 
-            # 统计批次群聊数量
+            # 统计批次群聊数量，并对批次内的敏感字段进行脱敏
             group_batches = config_copy.get("group_batches", [])
             if isinstance(group_batches, list):
-                batch_session_count = sum(
-                    len(batch.get("session_list", []))
-                    for batch in group_batches
-                    if isinstance(batch, dict)
-                )
+                batch_session_count = 0
+                for batch in group_batches:
+                    if not isinstance(batch, dict):
+                        continue
+                    # 脱敏 session_list：只保留数量，不上传真实 UMO
+                    session_list = batch.pop("session_list", [])
+                    batch["session_list_count"] = (
+                        len(session_list) if isinstance(session_list, list) else 0
+                    )
+                    # 脱敏提示词：删除批次内的 proactive_prompt
+                    batch.pop("proactive_prompt", None)
+                    batch_session_count += batch["session_list_count"]
+
                 config_copy["group_batch_count"] = len(group_batches)
                 config_copy["group_batch_session_count"] = batch_session_count
 
