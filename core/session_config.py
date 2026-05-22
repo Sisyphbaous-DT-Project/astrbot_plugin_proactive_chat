@@ -112,6 +112,7 @@ class ConfigMixin:
             effective["_from_session_list"] = base_config.get(
                 "_from_session_list", False
             )
+            effective["_from_batch"] = base_config.get("_from_batch")
             effective["_has_override"] = bool(
                 manager.get_override(normalized_session_id)
             )
