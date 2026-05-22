@@ -258,9 +258,10 @@ class SchedulerMixin:
                 elif result == "max_unanswered":
                     skipped_max_unanswered += 1
 
-        # 群聊 session_list 批量注册
+        # 群聊 session_list 批量注册（全局 + 批次）
         group_settings = self.config.get("group_settings", {})
         if group_settings.get("enable", False):
+            # 全局 session_list
             for session_id in group_settings.get("session_list", []):
                 result = await self._setup_auto_trigger_for_session_config(
                     group_settings, session_id
@@ -275,6 +276,23 @@ class SchedulerMixin:
                     skipped_disabled += 1
                 elif result == "max_unanswered":
                     skipped_max_unanswered += 1
+
+            # 批次 session_list
+            for batch in self.config.get("group_batches", []):
+                for session_id in batch.get("session_list", []):
+                    result = await self._setup_auto_trigger_for_session_config(
+                        group_settings, session_id
+                    )
+                    if result == "created":
+                        auto_trigger_count += 1
+                    elif result == "existing":
+                        skipped_existing += 1
+                    elif result == "invalid":
+                        skipped_invalid += 1
+                    elif result == "disabled":
+                        skipped_disabled += 1
+                    elif result == "max_unanswered":
+                        skipped_max_unanswered += 1
 
         # 汇总日志
         has_auto_trigger_config = False
