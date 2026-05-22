@@ -238,6 +238,17 @@ class TelemetryManager:
                 if "proactive_prompt" in group_settings:
                     del group_settings["proactive_prompt"]
 
+            # 统计批次群聊数量
+            group_batches = config_copy.get("group_batches", [])
+            if isinstance(group_batches, list):
+                batch_session_count = sum(
+                    len(batch.get("session_list", []))
+                    for batch in group_batches
+                    if isinstance(batch, dict)
+                )
+                config_copy["group_batch_count"] = len(group_batches)
+                config_copy["group_batch_session_count"] = batch_session_count
+
             web_admin = config_copy.get("web_admin")
             if isinstance(web_admin, dict) and "password" in web_admin:
                 # 管理端密码绝不进入遥测事件。

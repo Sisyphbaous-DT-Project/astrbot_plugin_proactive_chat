@@ -1084,6 +1084,14 @@ class WebAdminServer:
                 if isinstance(session, str) and session:
                     sessions.add(self.plugin._normalize_session_id(session))
 
+        # 再收集批次群聊
+        group_settings = self.config.get("group_settings", {})
+        if group_settings.get("enable", False):
+            for batch in self.config.get("group_batches", []):
+                for session in batch.get("session_list", []):
+                    if isinstance(session, str) and session:
+                        sessions.add(self.plugin._normalize_session_id(session))
+
         # 再并入运行时数据与会话覆写记录，保证“曾经出现过”的会话也能在管理端看到。
         sessions.update(self.plugin.session_data.keys())
         sessions.update(self.plugin.session_override_manager.list_sessions())
