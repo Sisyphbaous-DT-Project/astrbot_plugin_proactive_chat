@@ -578,6 +578,14 @@ class RuntimeContextCacheMixin:
                 if session_id:
                     sessions.add(self._normalize_session_id(str(session_id)))
 
+        # 批次群聊也需要纳入缓存候选
+        group_settings = getattr(self, "config", {}).get("group_settings", {})
+        if isinstance(group_settings, dict) and group_settings.get("enable", False):
+            for batch in getattr(self, "config", {}).get("group_batches", []) or []:
+                for session_id in batch.get("session_list", []) or []:
+                    if session_id:
+                        sessions.add(self._normalize_session_id(str(session_id)))
+
         cache = getattr(self, "runtime_context_cache", None)
         if isinstance(cache, RuntimeContextCache):
             sessions.update(cache.messages.keys())
