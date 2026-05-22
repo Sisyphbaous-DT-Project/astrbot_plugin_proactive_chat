@@ -44,10 +44,20 @@ class ConfigMixin:
             # 群聊配置校验
             if group_settings.get("enable", False):
                 session_list = group_settings.get("session_list", [])
-                if not session_list:
+                has_batches = bool(self.config.get("group_batches", []))
+                if not session_list and not has_batches:
                     logger.warning(
-                        "[主动消息] 群聊主动消息已启用但未配置任何会话喵（session_list 为空）。"
+                        "[主动消息] 群聊主动消息已启用但未配置任何会话喵（session_list 为空且无批次）。"
                     )
+
+                # 校验群聊批次的区间合法性
+                for batch in self.config.get("group_batches", []):
+                    min_interval = batch.get("min_interval_minutes", 90)
+                    max_interval = batch.get("max_interval_minutes", 360)
+                    if min_interval > max_interval:
+                        logger.warning(
+                            f"[主动消息] 群聊批次 '{batch.get('batch_name', '未命名')}' 中最小间隔大于最大间隔喵，将自动调整喵。"
+                        )
 
             logger.info("[主动消息] 配置验证完成喵。")
 
@@ -116,11 +126,44 @@ class ConfigMixin:
         if not settings.get("enable", False):
             return None
 
-        # 命中规则：支持完整 UMO、规范化 UMO 或纯 target_id 三种写法
-        session_list = settings.get("session_list", [])
         normalized_session_id = self._normalize_session_id(session_id)
         candidates = {session_id, normalized_session_id, target_id}
 
+        # === 群聊批次优先检查 ===
+        if session_type == "group" and settings_key == "group_settings":
+            batches = self.config.get("group_batches", [])
+            for batch in batches:
+                batch_session_list = batch.get("session_list", [])
+                if any(candidate in batch_session_list for candidate in candidates):
+                    # 以全局群聊配置为基座，用批次字段覆盖
+                    config_copy = copy.deepcopy(settings)
+                    config_copy["_session_type"] = session_type
+                    config_copy["_from_session_list"] = True
+                    config_copy["_from_batch"] = batch.get("batch_name", "未命名批次")
+
+                    # 覆盖批次扁平字段
+                    for key in ("group_idle_trigger_minutes", "proactive_prompt"):
+                        if key in batch and batch[key]:
+                            config_copy[key] = batch[key]
+
+                    # 组装 schedule_settings（批次扁平字段 → 嵌套结构）
+                    schedule_copy = copy.deepcopy(
+                        config_copy.get("schedule_settings", {})
+                    )
+                    for key in (
+                        "min_interval_minutes",
+                        "max_interval_minutes",
+                        "quiet_hours",
+                        "max_unanswered_times",
+                    ):
+                        if key in batch:
+                            schedule_copy[key] = batch[key]
+                    config_copy["schedule_settings"] = schedule_copy
+
+                    return config_copy
+
+        # 命中全局 session_list
+        session_list = settings.get("session_list", [])
         if any(candidate in session_list for candidate in candidates):
             # 返回深拷贝，避免调用方意外修改全局配置对象
             config_copy = copy.deepcopy(settings)

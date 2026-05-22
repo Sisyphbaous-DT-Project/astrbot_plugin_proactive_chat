@@ -52,7 +52,7 @@ class CachedMessage:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "CachedMessage | None":
+    def from_dict(cls, data: Any) -> CachedMessage | None:
         """从 JSON 数据恢复消息记录。"""
         if not isinstance(data, dict):
             return None
@@ -294,9 +294,7 @@ class RuntimeContextCache:
 
         if not include_bot_messages:
             selected = [
-                item
-                for item in selected
-                if item.role not in {"assistant", "bot"}
+                item for item in selected if item.role not in {"assistant", "bot"}
             ]
         return selected
 
@@ -535,13 +533,13 @@ class RuntimeContextCacheMixin:
             ).strip(),
         }
 
-    def _get_runtime_cache_settings_for_session(self, session_id: str) -> dict[str, Any]:
+    def _get_runtime_cache_settings_for_session(
+        self, session_id: str
+    ) -> dict[str, Any]:
         getter = getattr(self, "_get_context_settings", None)
         if callable(getter):
             try:
-                return self._get_runtime_cache_settings_from_context(
-                    getter(session_id)
-                )
+                return self._get_runtime_cache_settings_from_context(getter(session_id))
             except Exception:
                 pass
         return self._get_runtime_cache_settings_from_context({})
@@ -750,7 +748,9 @@ class RuntimeContextCacheMixin:
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.error(f"[主动消息] 等待最近聊天记录保存时出错：{e}", exc_info=True)
+                logger.error(
+                    f"[主动消息] 等待最近聊天记录保存时出错：{e}", exc_info=True
+                )
 
         dirty_sessions = getattr(self, "runtime_cache_dirty_sessions", None)
         if isinstance(dirty_sessions, set) and dirty_sessions:
@@ -957,7 +957,8 @@ class RuntimeContextCacheMixin:
             raw_umo=session_id,
             normalized_umo=normalized_session_id,
             sender_id=self._get_event_sender_id_for_runtime_cache(event) or "member",
-            sender_name=self._get_event_sender_name_for_runtime_cache(event) or "群成员",
+            sender_name=self._get_event_sender_name_for_runtime_cache(event)
+            or "群成员",
             text=text,
             message_id=self._get_event_message_id_for_runtime_cache(event),
         )

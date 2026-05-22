@@ -327,15 +327,21 @@ class SenderMixin:
             return "".join(parts).strip()
         return str(content or "").strip()
 
-    def _build_sender_conversation_session_candidates(self, session_id: str) -> list[str]:
-        candidate_builder = getattr(self, "_build_conversation_session_candidates", None)
+    def _build_sender_conversation_session_candidates(
+        self, session_id: str
+    ) -> list[str]:
+        candidate_builder = getattr(
+            self, "_build_conversation_session_candidates", None
+        )
         if callable(candidate_builder):
             try:
                 candidates = candidate_builder(session_id)
                 if isinstance(candidates, list) and candidates:
                     return [str(item) for item in candidates if str(item or "").strip()]
             except Exception as e:
-                logger.debug(f"[主动消息] 构建对话候选 UMO 失败，使用发送侧兜底逻辑喵: {e}")
+                logger.debug(
+                    f"[主动消息] 构建对话候选 UMO 失败，使用发送侧兜底逻辑喵: {e}"
+                )
 
         candidates: list[str] = []
 
@@ -442,7 +448,9 @@ class SenderMixin:
 
         conv_mgr = getattr(self.context, "conversation_manager", None)
         if not conv_mgr:
-            logger.debug("[主动消息] 当前 AstrBot 上下文没有 conversation_manager，跳过对话历史写入喵。")
+            logger.debug(
+                "[主动消息] 当前 AstrBot 上下文没有 conversation_manager，跳过对话历史写入喵。"
+            )
             return False
 
         candidates = self._build_sender_conversation_session_candidates(session_id)
@@ -554,7 +562,9 @@ class SenderMixin:
         user_text = str(user_prompt or "").strip() or "[主动消息触发]"
         conv_mgr = getattr(self.context, "conversation_manager", None)
         if not conv_mgr or not conv_id:
-            logger.warning("[主动消息] 无法写入对话历史：conversation_manager 或 conv_id 为空。")
+            logger.warning(
+                "[主动消息] 无法写入对话历史：conversation_manager 或 conv_id 为空。"
+            )
             return False
 
         candidates = self._build_sender_conversation_session_candidates(session_id)

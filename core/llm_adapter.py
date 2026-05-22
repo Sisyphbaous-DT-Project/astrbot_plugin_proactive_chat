@@ -580,10 +580,11 @@ class LlmMixin:
                 )
             )
 
-        if (
-            settings.get("runtime_cache_enable", True)
-            and source_mode in {"platform_message_history", "event_cache", "hybrid"}
-        ):
+        if settings.get("runtime_cache_enable", True) and source_mode in {
+            "platform_message_history",
+            "event_cache",
+            "hybrid",
+        }:
             cache_loader = getattr(self, "_load_runtime_context_cache_records", None)
             cache_formatter = getattr(self, "_format_runtime_cache_as_context", None)
             if callable(cache_loader) and callable(cache_formatter):

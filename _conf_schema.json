@@ -684,6 +684,82 @@
             }
         }
     },
+    "group_batches": {
+        "description": "👥 群聊分批配置",
+        "type": "template_list",
+        "hint": "将群聊分成多个批次，每批可独立设置沉默时间和触发间隔。未加入任何批次的群聊仍使用上方全局群聊配置。",
+        "templates": {
+            "group_batch": {
+                "name": "群聊批次",
+                "hint": "一组共享相同主动消息策略的群聊",
+                "items": {
+                    "batch_name": {
+                        "description": "🏷️ 批次名称",
+                        "type": "string",
+                        "default": "新批次"
+                    },
+                    "session_list": {
+                        "description": "📋 群聊会话 UMO 列表",
+                        "type": "list",
+                        "default": [],
+                        "hint": "每行一个群聊 UMO。格式: {platform}:GroupMessage:{group_id}"
+                    },
+                    "group_idle_trigger_minutes": {
+                        "description": "⏳ 群聊沉默触发时间 (分钟)",
+                        "type": "int",
+                        "default": 30,
+                        "slider": {
+                            "min": 1,
+                            "max": 1440,
+                            "step": 10
+                        }
+                    },
+                    "min_interval_minutes": {
+                        "description": "🕒 最小触发间隔 (分钟)",
+                        "type": "int",
+                        "default": 90,
+                        "slider": {
+                            "min": 1,
+                            "max": 2880,
+                            "step": 30
+                        }
+                    },
+                    "max_interval_minutes": {
+                        "description": "🕒 最大触发间隔 (分钟)",
+                        "type": "int",
+                        "default": 360,
+                        "slider": {
+                            "min": 1,
+                            "max": 2880,
+                            "step": 30
+                        }
+                    },
+                    "quiet_hours": {
+                        "description": "🌙 免打扰时段 (24小时制)",
+                        "type": "string",
+                        "default": "2-6",
+                        "hint": "格式：开始-结束，例如 2-6 表示凌晨 2 点到早上 6 点"
+                    },
+                    "max_unanswered_times": {
+                        "description": "🛑 最大未回复次数上限",
+                        "type": "int",
+                        "default": 2,
+                        "slider": {
+                            "min": 0,
+                            "max": 20,
+                            "step": 1
+                        }
+                    },
+                    "proactive_prompt": {
+                        "description": "🧠 主动消息提示词（留空则继承全局）",
+                        "type": "text",
+                        "default": "",
+                        "hint": "如果为空，将使用上方群聊全局配置的提示词"
+                    }
+                }
+            }
+        }
+    },
     "web_admin": {
         "description": "🌐 Web 管理端设置",
         "type": "object",

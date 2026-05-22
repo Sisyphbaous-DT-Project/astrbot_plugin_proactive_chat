@@ -1306,7 +1306,9 @@ class WebAdminServer:
         try:
             port = int(web_admin.get("port", 4100))
         except (TypeError, ValueError):
-            logger.warning("[主动消息] Web 管理端端口配置无效喵，已自动禁用 Web 管理端。")
+            logger.warning(
+                "[主动消息] Web 管理端端口配置无效喵，已自动禁用 Web 管理端。"
+            )
             return
 
         ok, reason = _can_bind_host_port(host, port)
