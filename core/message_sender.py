@@ -218,7 +218,7 @@ class SenderMixin:
 
         # 注入结果链以便装饰器修改
         res = MessageEventResult()
-        res.chain = chain
+        res.chain = list(chain)
         event.set_result(res)
 
         # 顺序执行所有 OnDecoratingResultEvent 处理器
@@ -599,6 +599,20 @@ class SenderMixin:
 
             if not isinstance(history, list):
                 history = []
+
+            # If send_message() has already persisted the assistant message
+            # (via the core fix), remove the duplicate to avoid paired
+            # history corruption.
+            if (
+                history
+                and isinstance(history[-1], dict)
+                and history[-1].get("role") == "assistant"
+                and self._extract_history_content_text(
+                    history[-1].get("content")
+                )
+                == assistant_text
+            ):
+                history.pop()
 
             if len(history) >= 2:
                 last_user = history[-2]
