@@ -9,6 +9,11 @@ from typing import Any
 
 from astrbot.api import logger
 
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+
 
 class LlmMixin:
     """上下文获取与 LLM 调用相关混入类。"""
@@ -31,7 +36,6 @@ class LlmMixin:
 
     context: Any
     timezone: Any
-    telemetry: Any
 
     def _parse_bool_setting(self, value: Any, default: bool) -> bool:
         if isinstance(value, bool):
@@ -108,8 +112,12 @@ class LlmMixin:
             try:
                 await switcher(session_id, conv_id)
             except Exception as e:
-                logger.debug(
-                    f"[主动消息] 同步对话映射失败：{self._get_session_log_str(session_id)} -> {conv_id}，错误：{e}"
+                log_safe_exception(
+                    logger,
+                    "debug",
+                    "PC-LLM-004",
+                    "同步对话映射失败",
+                    e,
                 )
 
     def _sanitize_history_content(self, history: list) -> list:
@@ -122,9 +130,8 @@ class LlmMixin:
             elif isinstance(msg, dict):
                 msg_dict = msg.copy()
             else:
-                logger.debug(
-                    f"[主动消息] 历史记录中发现无法识别的消息格式: {type(msg)}，已跳过喵。"
-                )
+                # 不记录动态消息类型名；第三方可能构造带有聊天正文的类名。
+                logger.debug("[主动消息] 历史记录中发现无法识别的消息格式，已跳过喵。")
                 continue
 
             content = msg_dict.get("content")
@@ -320,9 +327,12 @@ class LlmMixin:
                 if normalized_records:
                     return normalized_records, len(normalized_records)
             except Exception as e:
-                logger.warning(
-                    f"[主动消息] 读取平台流水失败喵：平台标识为“{platform_id}”，用户标识为“{user_id}”，异常信息：{e}",
-                    exc_info=True,
+                log_safe_exception(
+                    logger,
+                    "warning",
+                    "PC-HISTORY-001",
+                    "读取平台流水失败",
+                    e,
                 )
                 continue
 
@@ -735,11 +745,17 @@ class LlmMixin:
                     conv_id = await self.context.conversation_manager.new_conversation(
                         effective_session_id
                     )
-                    logger.info(f"[主动消息] 新对话创建成功喵，ID: {conv_id}")
+                    logger.info("[主动消息] 新对话创建成功喵。")
                 except ValueError:
                     raise
                 except Exception as e:
-                    logger.error(f"[主动消息] 创建新对话失败喵: {e}", exc_info=True)
+                    log_safe_exception(
+                        logger,
+                        "error",
+                        "PC-CONV-002",
+                        "创建新对话失败",
+                        e,
+                    )
                     return None
 
             if not conv_id:
@@ -750,8 +766,7 @@ class LlmMixin:
 
             await self._sync_conversation_aliases(conv_id, candidate_session_ids)
             logger.info(
-                f"[主动消息] 当前对话映射：使用 {self._get_session_log_str(effective_session_id)}，"
-                f"conv_id={conv_id}，候选会话数={len(candidate_session_ids)}。"
+                f"[主动消息] 当前对话映射已确认，候选会话数={len(candidate_session_ids)}。"
             )
 
             # 拉取对话历史（可能是字符串化 JSON，也可能是对象列表）
@@ -830,27 +845,6 @@ class LlmMixin:
             )
 
             logger.info("[主动消息] 上下文与人格设定已准备完成喵。")
-            if self.telemetry and self.telemetry.enabled:
-                # 这里只记录“上下文准备是否成功”和历史条数等统计值，不上传任何历史正文或人格提示词内容。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_feature(
-                            "llm_context_prepared",
-                            {
-                                "history_count": len(effective_history_messages),
-                                "conversation_history_count": len(
-                                    pure_history_messages
-                                ),
-                                "context_source_mode": context_settings["source_mode"],
-                                "has_persona": bool(original_system_prompt),
-                                "is_new_conversation": effective_session_id
-                                == session_id
-                                and conv_id is not None,
-                            },
-                        )
-                    )
-                )
-
             return {
                 "conv_id": conv_id,
                 "history": effective_history_messages,
@@ -859,17 +853,13 @@ class LlmMixin:
             }
 
         except Exception as e:
-            logger.warning(f"[主动消息] 获取上下文或人格失败喵: {e}")
-            if self.telemetry and self.telemetry.enabled:
-                # 上下文准备失败会直接影响本轮主动消息，因此单独打点到 prepare_llm_request 模块。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_error(
-                            e,
-                            module="core.llm_adapter._prepare_llm_request",
-                        )
-                    )
-                )
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-LLM-001",
+                "获取上下文或人格失败",
+                e,
+            )
             return None
 
     async def _generate_llm_response(
@@ -901,34 +891,14 @@ class LlmMixin:
                 system_prompt=system_prompt,
             )
             logger.info("[主动消息] 使用新 API 调用 LLM 成功喵。")
-            if self.telemetry and self.telemetry.enabled:
-                # 记录新接口调用成功，用于观察新版统一 LLM API 的实际可用性与覆盖情况。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_feature(
-                            "llm_generate_result",
-                            {
-                                "provider_mode": "new_api",
-                                "success": True,
-                                "history_count": len(history_messages),
-                            },
-                        )
-                    )
-                )
         except Exception as llm_error:
-            logger.error(f"[主动消息] 使用新 API 调用 LLM 失败喵: {llm_error}")
-            logger.info(f"[主动消息] 错误类型喵: {type(llm_error).__name__}")
-            logger.info(f"[主动消息] 错误详情喵: {str(llm_error)}")
-            if self.telemetry and self.telemetry.enabled:
-                # 新接口失败时单独记录，便于与 fallback_api 的失败率拆分分析。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_error(
-                            llm_error,
-                            module="core.llm_adapter._generate_llm_response.new_api",
-                        )
-                    )
-                )
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-LLM-002",
+                "使用新 API 调用 LLM 失败",
+                llm_error,
+            )
 
             # 回退到旧接口（兼容历史 Provider 实现）
             try:
@@ -940,39 +910,18 @@ class LlmMixin:
                         system_prompt=system_prompt,
                     )
                     logger.info("[主动消息] 使用传统 API 回退成功喵。")
-                    if self.telemetry and self.telemetry.enabled:
-                        # 记录回退接口成功，帮助判断旧 Provider 接口仍承担了多少实际流量。
-                        self._track_task(
-                            asyncio.create_task(
-                                self.telemetry.track_feature(
-                                    "llm_generate_result",
-                                    {
-                                        "provider_mode": "fallback_api",
-                                        "success": True,
-                                        "history_count": len(history_messages),
-                                    },
-                                )
-                            )
-                        )
                 else:
                     logger.warning("[主动消息] 未找到 LLM Provider，放弃并重新调度喵。")
                     return None, final_user_simulation_prompt
             except Exception as fallback_error:
-                logger.error(f"[主动消息] 传统 API 回退也失败喵: {fallback_error}")
-                logger.info(
-                    f"[主动消息] 回退错误类型喵: {type(fallback_error).__name__}"
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-LLM-003",
+                    "传统 API 回退也失败",
+                    fallback_error,
                 )
                 logger.error("[主动消息] 呜喵？！LLM调用完全失败，将重新调度任务喵。")
-                if self.telemetry and self.telemetry.enabled:
-                    # 连回退接口都失败时单独上报，便于快速识别“LLM 全链路不可用”的故障。
-                    self._track_task(
-                        asyncio.create_task(
-                            self.telemetry.track_error(
-                                fallback_error,
-                                module="core.llm_adapter._generate_llm_response.fallback_api",
-                            )
-                        )
-                    )
                 return None, final_user_simulation_prompt
 
         # 仅在确实拿到 completion_text 时视为成功
@@ -987,36 +936,7 @@ class LlmMixin:
                 )
                 return None, final_user_simulation_prompt
             logger.info(f"[主动消息] LLM 已生成文本喵，长度: {len(response_text)}。")
-            if self.telemetry and self.telemetry.enabled:
-                # 这里只统计响应长度与会话类型，不上传生成正文，避免把真实对话内容带入遥测。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_feature(
-                            "llm_response_ready",
-                            {
-                                "response_length": len(response_text),
-                                "session_type": session_config.get(
-                                    "_session_type", "unknown"
-                                ),
-                            },
-                        )
-                    )
-                )
             return response_text, final_user_simulation_prompt
 
         logger.warning("[主动消息] LLM 调用失败或返回空内容，重新调度喵。")
-        if self.telemetry and self.telemetry.enabled:
-            # 返回空内容也记为失败，用于分析“模型调用成功但无有效输出”的异常比例。
-            self._track_task(
-                asyncio.create_task(
-                    self.telemetry.track_feature(
-                        "llm_generate_result",
-                        {
-                            "provider_mode": "unknown",
-                            "success": False,
-                            "history_count": len(history_messages),
-                        },
-                    )
-                )
-            )
         return None, final_user_simulation_prompt

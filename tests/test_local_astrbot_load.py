@@ -26,7 +26,10 @@ class MockContext:
 
     def get_registered_star(self, name):
         for star in self.stars:
-            if getattr(star, "root_dir_name", None) == name or getattr(star, "name", None) == name:
+            if (
+                getattr(star, "root_dir_name", None) == name
+                or getattr(star, "name", None) == name
+            ):
                 return star
         return None
 
@@ -101,7 +104,6 @@ async def test_plugin_can_load_through_local_astrbot_plugin_manager(
             {
                 "web_admin": {"enabled": False},
                 "notification_settings": {"enabled": False},
-                "telemetry_config": {"enabled": False},
             },
             ensure_ascii=False,
             indent=2,
@@ -167,7 +169,6 @@ async def test_loaded_plugin_instance_runs_runtime_cache_flow(
             {
                 "web_admin": {"enabled": False},
                 "notification_settings": {"enabled": False},
-                "telemetry_config": {"enabled": False},
             },
             ensure_ascii=False,
             indent=2,
@@ -288,7 +289,6 @@ async def test_loaded_plugin_instance_restores_persisted_runtime_cache(
             {
                 "web_admin": {"enabled": False},
                 "notification_settings": {"enabled": False},
-                "telemetry_config": {"enabled": False},
             },
             ensure_ascii=False,
             indent=2,
@@ -419,7 +419,6 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
             {
                 "web_admin": {"enabled": False},
                 "notification_settings": {"enabled": False},
-                "telemetry_config": {"enabled": False},
             },
             ensure_ascii=False,
             indent=2,
@@ -451,7 +450,9 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         await db.initialize()
         temp_sp = SharedPreferences(
             db,
-            json_storage_path=str(astrbot_root / "data" / "test_shared_preferences.json"),
+            json_storage_path=str(
+                astrbot_root / "data" / "test_shared_preferences.json"
+            ),
         )
         monkeypatch.setattr(conversation_mgr_module, "sp", temp_sp)
 
@@ -558,7 +559,10 @@ async def test_local_astrbot_conversation_history_keeps_proactive_message_contex
         )
         assert [conv.cid for conv in raw_conversations] == [raw_conv_id]
         assert plugin.session_data[normalized_session_id]["unanswered_count"] == 1
-        assert raw_session_id not in plugin.session_data or "unanswered_count" not in plugin.session_data.get(raw_session_id, {})
+        assert (
+            raw_session_id not in plugin.session_data
+            or "unanswered_count" not in plugin.session_data.get(raw_session_id, {})
+        )
         assert plugin.scheduler.jobs[-1]["id"] == normalized_session_id
         assert plugin.scheduler.jobs[-1]["args"] == [normalized_session_id]
     finally:
@@ -584,7 +588,6 @@ async def test_local_astrbot_check_and_chat_uses_normalized_state_for_new_messag
             {
                 "web_admin": {"enabled": False},
                 "notification_settings": {"enabled": False},
-                "telemetry_config": {"enabled": False},
             },
             ensure_ascii=False,
             indent=2,

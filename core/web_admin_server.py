@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import errno
 import json
 import math
@@ -19,7 +20,19 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..utils.version import get_plugin_version
+try:
+    from ..utils.version import get_plugin_version
+    from ..utils.safe_logging import exception_type_name, log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.version import get_plugin_version
+    from utils.safe_logging import exception_type_name, log_safe_exception
+
+from .group_batch_config import (
+    GroupBatchValidationError,
+    normalize_group_batches,
+    normalize_session_list,
+    normalize_session_settings,
+)
 
 try:
     # Web 管理端完全基于 FastAPI / Uvicorn 提供 HTTP 与 WebSocket 能力。
@@ -68,7 +81,7 @@ def _can_bind_host_port(host: str, port: int) -> tuple[bool, str]:
     except OSError as e:
         if e.errno == errno.EADDRINUSE:
             return False, f"{host}:{port} 已被占用"
-        return False, str(e)
+        return False, "端口不可用"
     finally:
         sock.close()
 
@@ -96,7 +109,10 @@ class WebAdminServer:
         # 简单的内存令牌表：token -> 过期时间戳。
         self._tokens: dict[str, float] = {}
         # 仅当配置中设置了密码时才开启鉴权。
-        self._auth_enabled = bool(self.config.get("web_admin", {}).get("password", ""))
+        raw_web_admin = self.config.get("web_admin", {})
+        self._auth_password = self._read_admin_password(raw_web_admin)
+        # 非字符串密码配置按“鉴权开启但配置无效”处理，避免坏配置意外变成裸奔。
+        self._auth_enabled = self._auth_password is None or bool(self._auth_password)
         # 缓存插件版本，避免在高频状态轮询与广播中重复读取文件。
         self._metadata_version = get_plugin_version(default="未知版本")
         # 标记 Web 管理端当前是否可用，便于启动阶段做更精确的降级判断。
@@ -112,10 +128,13 @@ class WebAdminServer:
             except Exception as e:
                 self.app = None
                 self._web_admin_available = False
-                self._web_admin_init_error = str(e)
-                logger.error(
-                    "[主动消息] Web 管理端初始化失败喵，已自动禁用，不影响插件主体功能。"
-                    f" 可能是 FastAPI / Pydantic 依赖版本不兼容: {e}"
+                self._web_admin_init_error = exception_type_name(e)
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-INIT",
+                    "Web 管理端初始化失败，已自动禁用",
+                    e,
                 )
 
     def _setup_app(self) -> None:
@@ -141,6 +160,7 @@ class WebAdminServer:
 
         @self.app.middleware("http")
         async def auth_middleware(request: Request, call_next):
+            await self._sync_auth_state()
             # 未启用密码保护时，所有请求直接放行。
             if not self._auth_enabled:
                 return await call_next(request)
@@ -170,6 +190,42 @@ class WebAdminServer:
         self._register_routes()
         self._mount_static_files()
 
+    @staticmethod
+    def _read_admin_password(web_admin: Any) -> str | None:
+        """读取管理端密码；None 表示配置类型错误，必须保持鉴权开启。"""
+        if not isinstance(web_admin, dict):
+            return None
+        if "password" not in web_admin:
+            return ""
+        password = web_admin["password"]
+        if isinstance(password, str):
+            return password
+        return None
+
+    async def _invalidate_auth_state(self) -> None:
+        """密码变化后废除旧凭据，并断开已经认证的管理端连接。"""
+        self._tokens.clear()
+        connections = list(self._ws_connections)
+        self._ws_connections.clear()
+        for websocket in connections:
+            with contextlib.suppress(Exception):
+                await websocket.close(code=1008)
+
+    async def _sync_auth_state(self) -> None:
+        """同步运行时鉴权状态，兼容管理端之外的配置热更新。"""
+        raw_web_admin = self.config.get("web_admin", {})
+        current_password = self._read_admin_password(raw_web_admin)
+        password_changed = current_password != self._auth_password
+        enabled_changed = (
+            current_password is None or bool(current_password)
+        ) != self._auth_enabled
+        if not password_changed and not enabled_changed:
+            return
+
+        self._auth_password = current_password
+        self._auth_enabled = current_password is None or bool(current_password)
+        await self._invalidate_auth_state()
+
     def _mount_static_files(self) -> None:
         if not self.app:
             return
@@ -182,7 +238,8 @@ class WebAdminServer:
                 "/", StaticFiles(directory=str(admin_dir), html=True), name="admin"
             )
         else:
-            logger.warning(f"[主动消息] 未找到管理端静态目录喵: {admin_dir}")
+            # 不把服务器绝对路径写入日志，避免泄露部署目录和用户名。
+            logger.warning("[主动消息] 未找到管理端静态目录喵。")
 
     def _register_routes(self) -> None:
         if not self.app:
@@ -191,12 +248,19 @@ class WebAdminServer:
         @self.app.get("/api/auth-info")
         async def auth_info():
             # 前端启动时会先调用该接口，判断是否需要展示登录流程。
+            await self._sync_auth_state()
             return {"auth_required": self._auth_enabled}
 
         @self.app.post("/api/login")
         async def login(credentials: dict[str, Any]):
             # 从配置中读取管理端密码；未配置密码时视为关闭鉴权。
-            password = self.config.get("web_admin", {}).get("password", "")
+            await self._sync_auth_state()
+            password = self._auth_password
+            if password is None:
+                return JSONResponse(
+                    {"error": "管理端密码配置无效"},
+                    status_code=503,
+                )
             if not password:
                 # 返回固定 no-auth token，便于前端保持统一的请求头处理逻辑。
                 return {"token": "no-auth", "auth_required": False}
@@ -246,9 +310,16 @@ class WebAdminServer:
                     status_code=400,
                 )
             except Exception as e:
-                logger.error(f"[主动消息] 读取 Markdown 文档失败喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-002",
+                    "读取 Markdown 文档失败",
+                    e,
+                )
                 return JSONResponse(
-                    {"error": "读取文档失败", "message": str(e)}, status_code=500
+                    {"error": "读取文档失败", "message": "服务器无法读取该文档"},
+                    status_code=500,
                 )
 
             return {
@@ -265,17 +336,26 @@ class WebAdminServer:
         @self.app.get("/api/config")
         async def get_config():
             # 返回配置时显式过滤密码字段，避免管理端读取到明文密码。
-            web_admin = {
-                k: v
-                for k, v in self.config.get("web_admin", {}).items()
-                if k != "password"
-            }
+            raw_web_admin = self.config.get("web_admin", {})
+            web_admin = (
+                {k: v for k, v in raw_web_admin.items() if k != "password"}
+                if isinstance(raw_web_admin, dict)
+                else {}
+            )
+            friend_settings = self.config.get("friend_settings", {})
+            group_settings = self.config.get("group_settings", {})
+            notifications = self.config.get("notification_settings", {})
             return {
-                "friend_settings": dict(self.config.get("friend_settings", {})),
-                "group_settings": dict(self.config.get("group_settings", {})),
+                "friend_settings": (
+                    dict(friend_settings) if isinstance(friend_settings, dict) else {}
+                ),
+                "group_settings": (
+                    dict(group_settings) if isinstance(group_settings, dict) else {}
+                ),
+                "group_batches": copy.deepcopy(self.config.get("group_batches", [])),
                 "web_admin": web_admin,
-                "notification_settings": dict(
-                    self.config.get("notification_settings", {})
+                "notification_settings": (
+                    dict(notifications) if isinstance(notifications, dict) else {}
                 ),
             }
 
@@ -291,19 +371,82 @@ class WebAdminServer:
                     )
                     return json.loads(schema_text)
                 except Exception as e:
-                    logger.error(f"[主动消息] 读取 Schema 失败喵: {e}")
+                    log_safe_exception(
+                        logger,
+                        "error",
+                        "PC-WEB-003",
+                        "读取 Schema 失败",
+                        e,
+                    )
             return {}
 
         @self.app.post("/api/config")
         async def update_config(payload: dict[str, Any]):
-            # 仅允许更新这三个一级配置块，避免前端误写其它未知字段。
-            allowed_keys = {"friend_settings", "group_settings", "web_admin"}
+            # 仅允许更新这些一级配置块，避免前端误写其它未知字段。
+            allowed_keys = {
+                "friend_settings",
+                "group_settings",
+                "group_batches",
+                "web_admin",
+            }
+            validated_group_batches = None
+            validated_settings: dict[str, dict[str, Any]] = {}
+            for settings_key in ("friend_settings", "group_settings"):
+                if settings_key not in payload:
+                    continue
+                settings_value = payload[settings_key]
+                try:
+                    validated_settings[settings_key] = normalize_session_settings(
+                        settings_value,
+                        session_type=(
+                            "friend" if settings_key == "friend_settings" else "group"
+                        ),
+                        strict=True,
+                        fill_defaults=False,
+                        path=settings_key,
+                    )
+                except GroupBatchValidationError as error:
+                    return JSONResponse(
+                        {"error": f"{error.path}: {error.message}"},
+                        status_code=400,
+                    )
+            if "group_batches" in payload:
+                supports_template_list = getattr(
+                    self.plugin, "_astrbot_supports_template_list", lambda: False
+                )()
+                try:
+                    validated_group_batches = normalize_group_batches(
+                        payload["group_batches"],
+                        strict=True,
+                        add_template_key=supports_template_list,
+                        fill_defaults=False,
+                    )
+                except GroupBatchValidationError as error:
+                    return JSONResponse(
+                        {
+                            "error": f"{error.path}: {error.message}",
+                        },
+                        status_code=400,
+                    )
+            if "web_admin" in payload and not isinstance(payload["web_admin"], dict):
+                return JSONResponse(
+                    {"error": "web_admin 必须是对象"},
+                    status_code=400,
+                )
+            if "web_admin" in payload and "password" in payload["web_admin"]:
+                password = payload["web_admin"]["password"]
+                if not isinstance(password, str):
+                    return JSONResponse(
+                        {"error": "web_admin.password 必须是字符串"},
+                        status_code=400,
+                    )
             for key in allowed_keys:
                 if key not in payload:
                     continue
                 if key == "web_admin":
                     # web_admin 采用增量合并，避免未提交字段被整个覆盖掉。
-                    old = dict(self.config.get("web_admin", {}))
+                    raw_old = self.config.get("web_admin", {})
+                    old = dict(raw_old) if isinstance(raw_old, dict) else {}
                     old.update(payload.get("web_admin", {}))
                     # 密码字段允许显式更新，但不会通过 get_config 回传给前端。
                     if "password" in payload.get("web_admin", {}):
@@ -311,7 +454,20 @@ class WebAdminServer:
                     self.config["web_admin"] = old
                 else:
                     # friend / group 配置块按前端提交的完整对象直接替换。
-                    self.config[key] = payload[key]
+                    if key == "group_batches":
+                        self.config[key] = validated_group_batches or []
+                    else:
+                        self.config[key] = validated_settings[key]
+
+            normalize_batches = getattr(
+                self.plugin, "_normalize_group_batches_for_runtime", None
+            )
+            if callable(normalize_batches):
+                normalize_batches()
+
+            # 密码可能由管理端热更新；配置写入后立即同步鉴权状态，
+            # 令旧令牌和旧 WebSocket 不能继续沿用。
+            await self._sync_auth_state()
 
             self._save_plugin_config()
             # 配置变更后立即广播，确保所有已打开页面实时刷新。
@@ -371,6 +527,12 @@ class WebAdminServer:
         @self.app.post("/api/session-config/{umo:path}")
         async def update_session_config(umo: str, payload: dict[str, Any]):
             normalized = self.plugin._normalize_session_id(umo)
+            parsed = self.plugin._parse_session_id(normalized)
+            session_type = (
+                "group"
+                if parsed and parsed[1] in {"GroupMessage", "GuildMessage"}
+                else "friend"
+            )
             # mode 用于兼容两种写法：直接提交 override，或提交最终 effective 配置。
             mode = payload.get("mode", "effective")
 
@@ -381,9 +543,16 @@ class WebAdminServer:
                         {"error": "override 必须是对象"}, status_code=400
                     )
                 # override 模式由前端显式提交差异配置，后端不再做反推。
-                await self.plugin.session_override_manager.set_override(
-                    normalized, override
-                )
+                try:
+                    await self.plugin.session_override_manager.set_override(
+                        normalized,
+                        override,
+                        session_type=session_type,
+                    )
+                except GroupBatchValidationError as error:
+                    return JSONResponse(
+                        {"error": f"{error.path}: {error.message}"}, status_code=400
+                    )
             else:
                 effective = payload.get("effective", {})
                 if not isinstance(effective, dict):
@@ -399,13 +568,17 @@ class WebAdminServer:
                         },
                         status_code=400,
                     )
-                await (
-                    self.plugin.session_override_manager.update_session_from_effective(
+                try:
+                    await self.plugin.session_override_manager.update_session_from_effective(
                         normalized,
                         base,
                         effective,
+                        session_type=session_type,
                     )
-                )
+                except GroupBatchValidationError as error:
+                    return JSONResponse(
+                        {"error": f"{error.path}: {error.message}"}, status_code=400
+                    )
 
             await self._broadcast_update("session-config")
             return {
@@ -584,7 +757,13 @@ class WebAdminServer:
                     "message": "已在系统文件管理器中打开目录",
                 }
             except FileNotFoundError as e:
-                logger.error(f"[主动消息] 打开目录失败（命令缺失）喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-004",
+                    "打开目录失败（命令缺失）",
+                    e,
+                )
                 return JSONResponse(
                     {
                         "error": "打开目录失败：系统缺少所需命令",
@@ -594,21 +773,33 @@ class WebAdminServer:
                     status_code=500,
                 )
             except PermissionError as e:
-                logger.error(f"[主动消息] 打开目录失败（权限不足）喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-005",
+                    "打开目录失败（权限不足）",
+                    e,
+                )
                 return JSONResponse(
                     {
                         "error": "打开目录失败：权限不足",
-                        "message": str(e),
+                        "message": "服务器没有访问该目录的权限",
                         "path": str(directory),
                     },
                     status_code=500,
                 )
             except Exception as e:
-                logger.error(f"[主动消息] 打开目录失败喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-006",
+                    "打开目录失败",
+                    e,
+                )
                 return JSONResponse(
                     {
                         "error": "打开目录失败",
-                        "message": str(e),
+                        "message": "服务器无法打开该目录",
                         "path": str(directory),
                     },
                     status_code=500,
@@ -617,6 +808,14 @@ class WebAdminServer:
         @self.app.post("/api/jobs/{umo:path}/trigger")
         async def trigger_job(umo: str):
             # 立即手动触发一次指定会话的检查与发言流程；同一会话在执行完成前禁止重复触发。
+            if getattr(self.plugin, "_terminating", False):
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "message": "插件正在关闭，暂时不能立即触发任务",
+                    },
+                    status_code=503,
+                )
             normalized = self.plugin._normalize_session_id(umo)
             if normalized in self.plugin.manual_trigger_sessions:
                 return JSONResponse(
@@ -631,7 +830,10 @@ class WebAdminServer:
 
             self.plugin.manual_trigger_sessions.add(normalized)
             # 主动创建后台任务，避免前端请求长时间挂起等待业务执行完成。
-            asyncio.create_task(self.plugin.check_and_chat(normalized))
+            trigger_task = asyncio.create_task(self.plugin.check_and_chat(normalized))
+            track_task = getattr(self.plugin, "_track_task", None)
+            if callable(track_task):
+                track_task(trigger_task)
             await self._broadcast_update("jobs")
             return {
                 "ok": True,
@@ -673,22 +875,29 @@ class WebAdminServer:
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             # 当前 WebSocket 通道统一承载运行状态、任务、会话摘要与通知系统的实时同步。
-            if self._auth_enabled:
-                # WebSocket 无法沿用普通中间件，这里单独做一次 token 校验。
-                token = websocket.query_params.get("token", "")
-                if not token:
-                    auth_header = websocket.headers.get("Authorization", "")
-                    if auth_header.startswith("Bearer "):
-                        token = auth_header[7:]
-                if not self._verify_token(token):
-                    # 1008 表示策略违规，适合表达认证失败。
-                    await websocket.close(code=1008)
-                    return
-
+            await self._sync_auth_state()
             await websocket.accept()
-            self._ws_connections.append(websocket)
 
             try:
+                if self._auth_enabled:
+                    try:
+                        auth_text = await asyncio.wait_for(
+                            websocket.receive_text(), timeout=5.0
+                        )
+                        auth_msg = json.loads(auth_text)
+                    except (asyncio.TimeoutError, json.JSONDecodeError, TypeError):
+                        await websocket.close(code=1008)
+                        return
+
+                    token = ""
+                    if isinstance(auth_msg, dict) and auth_msg.get("type") == "auth":
+                        token = str(auth_msg.get("token") or "")
+                    if not self._verify_token(token):
+                        # 1008 表示策略违规，适合表达认证失败。
+                        await websocket.close(code=1008)
+                        return
+
+                self._ws_connections.append(websocket)
                 # 连接建立后先推送一次完整快照，避免前端依赖额外首次拉取。
                 await websocket.send_json(
                     {
@@ -705,11 +914,16 @@ class WebAdminServer:
                 while True:
                     # 前端只需发送轻量消息：ping 保活、refresh 主动请求全量刷新。
                     data = await websocket.receive_text()
+                    # 配置也可能被管理端之外的入口原地修改。每次处理消息前
+                    # 都同步一次密码状态，确保旧连接不能继续读取状态。
+                    await self._sync_auth_state()
+                    if websocket not in self._ws_connections:
+                        return
                     try:
                         msg = json.loads(data)
                     except (json.JSONDecodeError, TypeError, ValueError):
                         logger.debug(
-                            f"[主动消息] WebSocket 收到无效 JSON 数据喵: {str(data)[:100]}"
+                            "[主动消息] WebSocket 收到无效 JSON 数据，已忽略喵。"
                         )
                         continue
 
@@ -739,7 +953,13 @@ class WebAdminServer:
                 # 浏览器主动关闭标签页时会进入这里，属于正常流程。
                 pass
             except Exception as e:
-                logger.debug(f"[主动消息] WebSocket 连接异常喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "debug",
+                    "PC-WEB-007",
+                    "WebSocket 连接异常",
+                    e,
+                )
             finally:
                 # 无论异常还是正常断开，都必须回收连接引用，避免广播时残留死连接。
                 if websocket in self._ws_connections:
@@ -751,7 +971,13 @@ class WebAdminServer:
             if hasattr(self.config, "save_config"):
                 self.config.save_config()
         except Exception as e:
-            logger.warning(f"[主动消息] 保存配置失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-WEB-008",
+                "保存配置失败",
+                e,
+            )
 
     def _issue_token(self) -> str:
         # 生成适合放入 URL / Header 的安全随机 token。
@@ -764,8 +990,8 @@ class WebAdminServer:
         if not token:
             return False
         if token == "no-auth":
-            # 在未启用鉴权时允许该哨兵令牌直接通过。
-            return True
+            # 哨兵令牌只代表“当前确实没有配置密码”，不能绕过已开启的鉴权。
+            return not self._auth_enabled
         expire_at = self._tokens.get(token)
         if not expire_at:
             return False
@@ -812,14 +1038,16 @@ class WebAdminServer:
 
     def _detect_session_category(self, session_id: str) -> str:
         # 优先使用插件已有解析逻辑识别会话类型，避免前后端规则不一致。
+        is_group = getattr(self.plugin, "_is_group_session", None)
+        if callable(is_group):
+            return "group" if is_group(session_id) else "friend"
+
         parsed = self.plugin._parse_session_id(session_id)
         if not parsed:
-            lowered = str(session_id).lower()
-            # 兜底规则只在插件解析失败时启用，尽量保证前端仍有可用分类。
-            return "group" if "group" in lowered else "friend"
+            return "friend"
 
         _, msg_type, _ = parsed
-        return "group" if "group" in msg_type.lower() else "friend"
+        return "group" if msg_type in {"GroupMessage", "GuildMessage"} else "friend"
 
     def _collect_timer_cards(self, now: float) -> dict[str, list[dict[str, Any]]]:
         # auto_cards：自动触发检测计时器；group_cards：群沉默计时器。
@@ -840,6 +1068,12 @@ class WebAdminServer:
             auto_settings = session_config.get("auto_trigger_settings", {})
             schedule_settings = session_config.get("schedule_settings", {})
             context_settings = session_config.get("context_settings", {})
+            if not isinstance(auto_settings, dict):
+                auto_settings = {}
+            if not isinstance(schedule_settings, dict):
+                schedule_settings = {}
+            if not isinstance(context_settings, dict):
+                context_settings = {}
             trigger_delay_minutes = int(
                 auto_settings.get("auto_trigger_after_minutes", 0) or 0
             )
@@ -897,6 +1131,10 @@ class WebAdminServer:
             session_data = self.plugin.session_data.get(normalized_session_id, {})
             schedule_settings = session_config.get("schedule_settings", {})
             context_settings = session_config.get("context_settings", {})
+            if not isinstance(schedule_settings, dict):
+                schedule_settings = {}
+            if not isinstance(context_settings, dict):
+                context_settings = {}
             idle_minutes = int(session_config.get("group_idle_trigger_minutes", 0) or 0)
             idle_seconds = max(0, idle_minutes * 60)
             timer_meta = self._safe_timer_meta(timer, now)
@@ -1026,6 +1264,12 @@ class WebAdminServer:
             schedule_settings = session_config.get("schedule_settings", {})
             context_settings = session_config.get("context_settings", {})
             auto_trigger_settings = session_config.get("auto_trigger_settings", {})
+            if not isinstance(schedule_settings, dict):
+                schedule_settings = {}
+            if not isinstance(context_settings, dict):
+                context_settings = {}
+            if not isinstance(auto_trigger_settings, dict):
+                auto_trigger_settings = {}
             jobs.append(
                 {
                     "id": session_id,
@@ -1080,14 +1324,19 @@ class WebAdminServer:
         # 先收集全局配置里显式声明的会话。
         for scope_key in ("friend_settings", "group_settings"):
             cfg = self.config.get(scope_key, {})
-            for session in cfg.get("session_list", []):
-                if isinstance(session, str) and session:
-                    sessions.add(self.plugin._normalize_session_id(session))
+            if not isinstance(cfg, dict):
+                continue
+            for session in normalize_session_list(
+                cfg.get("session_list", []),
+                path=f"{scope_key}.session_list",
+            ):
+                sessions.add(self.plugin._normalize_session_id(session))
 
         # 再收集批次群聊
         group_settings = self.config.get("group_settings", {})
-        if group_settings.get("enable", False):
-            for batch in self.config.get("group_batches", []):
+        if isinstance(group_settings, dict) and group_settings.get("enable", False):
+            batches = normalize_group_batches(self.config.get("group_batches", []))
+            for batch in batches:
                 for session in batch.get("session_list", []):
                     if isinstance(session, str) and session:
                         sessions.add(self.plugin._normalize_session_id(session))
@@ -1232,6 +1481,7 @@ class WebAdminServer:
 
     async def _broadcast_ws_payload(self, payload: dict[str, Any]) -> None:
         # 广播发送与失活连接清理抽到公共方法，避免多个广播入口重复维护同一逻辑。
+        await self._sync_auth_state()
         to_remove: list[WebSocket] = []
         for ws in list(self._ws_connections):
             try:
@@ -1290,18 +1540,14 @@ class WebAdminServer:
             return
 
         if not self._web_admin_available or not self.app:
-            detail = (
-                f" 初始化失败原因: {self._web_admin_init_error}"
-                if self._web_admin_init_error
-                else ""
-            )
             logger.error(
-                "[主动消息] 无法启动 Web 管理端喵: 初始化未完成或依赖不兼容，已自动禁用。"
-                f"{detail}"
+                "[主动消息] 无法启动 Web 管理端喵：初始化未完成或依赖不兼容，已自动禁用。"
             )
             return
 
         web_admin = self.config.get("web_admin", {})
+        if not isinstance(web_admin, dict):
+            web_admin = {}
         if not web_admin.get("enabled", False):
             logger.info("[主动消息] Web 管理端未启用喵。")
             return
@@ -1343,19 +1589,31 @@ class WebAdminServer:
             try:
                 await self.server.serve()
             except SystemExit as e:
-                logger.warning(
-                    "[主动消息] Web 管理端启动失败并触发 SystemExit 喵，"
-                    f"已自动隔离，不影响插件主体功能: {e}"
+                log_safe_exception(
+                    logger,
+                    "warning",
+                    "PC-WEB-009",
+                    "Web 管理端启动失败并触发 SystemExit，已自动隔离",
+                    e,
                 )
             except OSError as e:
-                logger.warning(
-                    "[主动消息] Web 管理端启动失败喵，已自动禁用，不影响插件主体功能: "
-                    f"{e}"
+                log_safe_exception(
+                    logger,
+                    "warning",
+                    "PC-WEB-010",
+                    "Web 管理端启动失败，已自动禁用",
+                    e,
                 )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.error(f"[主动消息] Web 管理端运行异常喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-011",
+                    "Web 管理端运行异常",
+                    e,
+                )
 
         self.server_task = asyncio.create_task(_serve())
 
@@ -1372,14 +1630,26 @@ class WebAdminServer:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.debug(f"[主动消息] 清理过期令牌异常喵: {e}")
+                    log_safe_exception(
+                        logger,
+                        "debug",
+                        "PC-WEB-012",
+                        "清理过期令牌异常",
+                        e,
+                    )
 
-        if self._auth_enabled:
-            self._token_cleanup_task = asyncio.create_task(_cleanup_tokens_loop())
+        # 即使服务启动时未设置密码，也保持清理任务待命，
+        # 这样运行时开启密码后无需重新启动插件即可清理令牌。
+        self._token_cleanup_task = asyncio.create_task(_cleanup_tokens_loop())
 
         # 略等一个事件循环切片，让服务有机会完成绑定后再打印启动日志。
         await asyncio.sleep(0.1)
         if self.server_task.done():
+            if self._token_cleanup_task:
+                self._token_cleanup_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._token_cleanup_task
+                self._token_cleanup_task = None
             self.server = None
             self.server_task = None
             logger.warning("[主动消息] Web 管理端未能保持运行喵，已自动禁用。")
@@ -1409,10 +1679,17 @@ class WebAdminServer:
                 if not self.server_task.cancelled():
                     raise
             except Exception as e:
-                logger.debug(f"[主动消息] 等待 Web 管理端停止时出现异常喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "debug",
+                    "PC-WEB-013",
+                    "等待 Web 管理端停止时出现异常",
+                    e,
+                )
 
         self.server = None
         self.server_task = None
 
+        self._tokens.clear()
         self._ws_connections.clear()
         logger.info("[主动消息] Web 管理端已停止喵。")

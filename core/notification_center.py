@@ -16,7 +16,12 @@ import aiofiles.os as aio_os
 
 from astrbot.api import logger
 
-from ..utils.version import get_plugin_version
+try:
+    from ..utils.safe_logging import log_safe_exception
+    from ..utils.version import get_plugin_version
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+    from utils.version import get_plugin_version
 
 
 class NotificationCenter:
@@ -121,7 +126,13 @@ class NotificationCenter:
                 else {},
             }
         except Exception as e:
-            logger.warning(f"[主动消息] 读取通知缓存失败喵: {e}，将使用空缓存继续。")
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-NOTIFY-001",
+                "读取通知缓存失败，将使用空缓存继续",
+                e,
+            )
             self._cache = {
                 "last_sync_at": None,
                 "items": [],
@@ -142,7 +153,13 @@ class NotificationCenter:
                 )
                 await f.write(content)
         except Exception as e:
-            logger.warning(f"[主动消息] 保存通知缓存失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-NOTIFY-002",
+                "保存通知缓存失败",
+                e,
+            )
 
     def _normalize_item(self, raw: Any) -> dict[str, Any] | None:
         # 远端接口理论上返回对象数组；命中异常项时直接忽略，避免污染缓存。
@@ -257,7 +274,13 @@ class NotificationCenter:
         try:
             return json.dumps(items, ensure_ascii=False, sort_keys=True)
         except TypeError as e:
-            logger.warning(f"[主动消息] 创建通知签名时遇到不可序列化的项喵: {e}")
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-NOTIFY-003",
+                "创建通知签名时遇到不可序列化的项",
+                e,
+            )
             return str(items)
 
     def _build_meta_locked(self) -> dict[str, Any]:
@@ -345,7 +368,13 @@ class NotificationCenter:
                 await self._save_cache_locked()
                 return changed
         except Exception as e:
-            logger.warning(f"[主动消息] 同步远端通知失败喵: {e} (可忽略)")
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-NOTIFY-004",
+                "同步远端通知失败（可忽略）",
+                e,
+            )
             return False
         finally:
             async with self._sync_state_lock:
@@ -387,18 +416,38 @@ class NotificationCenter:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.warning(f"[主动消息] 通知轮询任务异常喵: {e} (可忽略)")
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-NOTIFY-005",
+                        "通知轮询任务异常（可忽略）",
+                        e,
+                    )
 
         self._poll_task = asyncio.create_task(_poll_loop())
         logger.info("[主动消息] 通知系统已启动喵。")
 
     async def stop(self) -> None:
-        if self._poll_task:
-            self._poll_task.cancel()
-            try:
-                await self._poll_task
-            except Exception:
-                pass
-            self._poll_task = None
-        await self.save_cache()
+        poll_task = self._poll_task
+        self._poll_task = None
+        try:
+            if poll_task:
+                poll_task.cancel()
+                try:
+                    await poll_task
+                except asyncio.CancelledError:
+                    # 轮询任务可能尚未进入自身的取消处理分支；这是预期收尾。
+                    pass
+                except Exception as error:
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-NOTIFY-005",
+                        "等待通知轮询任务停止失败",
+                        error,
+                    )
+        finally:
+            # 即使轮询任务刚启动就被取消，也要继续落盘已读状态和最近通知。
+            await self.save_cache()
+
         logger.info("[主动消息] 通知系统已停止喵。")

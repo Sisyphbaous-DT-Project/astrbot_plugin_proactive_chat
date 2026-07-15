@@ -10,6 +10,17 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .group_batch_config import (
+    normalize_group_batches,
+    normalize_session_list,
+    normalize_session_settings,
+)
+
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+
 
 class SchedulerMixin:
     """调度与计时相关的混入类。"""
@@ -27,6 +38,8 @@ class SchedulerMixin:
 
     async def _setup_auto_trigger(self, session_id: str, silent: bool = False) -> None:
         """为指定会话设置自动主动消息触发器。"""
+        if getattr(self, "_terminating", False):
+            return
         session_config = self._get_session_config(session_id)
         if not session_config:
             return
@@ -56,13 +69,21 @@ class SchedulerMixin:
                     f"[主动消息] 已取消 {self._get_session_log_str(session_id, session_config)} 现有的自动触发计时器喵。"
                 )
             except Exception as e:
-                logger.warning(f"[主动消息] 取消自动触发计时器时出错喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "warning",
+                    "PC-SCHEDULER-001",
+                    "取消自动触发计时器时出错",
+                    e,
+                )
             finally:
                 del self.auto_trigger_timers[session_id]
 
         # 闭包回调仅负责把真正逻辑投递回事件循环中的受控协程，
         # 避免在 call_later 回调里直接读写共享状态。
         def _auto_trigger_callback(captured_session_id=session_id):
+            if getattr(self, "_terminating", False):
+                return
             self._track_task(
                 asyncio.create_task(
                     self._handle_auto_trigger_callback(
@@ -84,7 +105,13 @@ class SchedulerMixin:
                     f"将在 {auto_trigger_minutes} 分钟后检查是否需要自动触发喵。"
                 )
         except Exception as e:
-            logger.error(f"[主动消息] 设置自动触发计时器失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-SCHEDULER-002",
+                "设置自动触发计时器失败",
+                e,
+            )
 
     async def _cancel_auto_trigger(self, session_id: str) -> bool:
         """取消指定会话的自动主动消息触发器。"""
@@ -97,7 +124,13 @@ class SchedulerMixin:
                     f"[主动消息] 已取消 {self._get_session_log_str(session_id)} 的自动触发计时器喵。"
                 )
             except Exception as e:
-                logger.warning(f"[主动消息] 取消自动触发计时器时出错喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "warning",
+                    "PC-SCHEDULER-003",
+                    "取消自动触发计时器时出错",
+                    e,
+                )
             finally:
                 del self.auto_trigger_timers[session_id]
         return cancelled
@@ -107,7 +140,7 @@ class SchedulerMixin:
         return await self._cancel_auto_trigger(session_id)
 
     def _is_friend_type(self, msg_type: str) -> bool:
-        return "Friend" in msg_type or "Private" in msg_type
+        return msg_type in {"FriendMessage", "PrivateMessage"}
 
     def _is_persisted_task_still_valid(
         self,
@@ -242,8 +275,17 @@ class SchedulerMixin:
 
         # 私聊 session_list 批量注册
         friend_settings = self.config.get("friend_settings", {})
+        friend_settings = normalize_session_settings(
+            friend_settings,
+            session_type="friend",
+            fill_defaults=True,
+            path="friend_settings",
+        )
         if friend_settings.get("enable", False):
-            for session_id in friend_settings.get("session_list", []):
+            for session_id in normalize_session_list(
+                friend_settings.get("session_list", []),
+                path="friend_settings.session_list",
+            ):
                 result = await self._setup_auto_trigger_for_session_config(
                     friend_settings, session_id
                 )
@@ -260,16 +302,26 @@ class SchedulerMixin:
 
         # 群聊 session_list 批量注册（全局 + 批次，去重避免重复遍历）
         group_settings = self.config.get("group_settings", {})
+        group_settings = normalize_session_settings(
+            group_settings,
+            session_type="group",
+            fill_defaults=True,
+            path="group_settings",
+        )
         if group_settings.get("enable", False):
             processed_group_sessions: set[str] = set()
 
             # 先收集所有群聊 session_id（全局 + 批次）
             all_group_sessions: list[str] = []
-            for session_id in group_settings.get("session_list", []):
+            for session_id in normalize_session_list(
+                group_settings.get("session_list", []),
+                path="group_settings.session_list",
+            ):
                 if session_id and session_id not in processed_group_sessions:
                     processed_group_sessions.add(session_id)
                     all_group_sessions.append(session_id)
-            for batch in self.config.get("group_batches", []):
+            batches = normalize_group_batches(self.config.get("group_batches", []))
+            for batch in batches:
                 for session_id in batch.get("session_list", []):
                     if session_id and session_id not in processed_group_sessions:
                         processed_group_sessions.add(session_id)
@@ -457,8 +509,12 @@ class SchedulerMixin:
                 )
                 restored_count += 1
             except Exception as e:
-                logger.error(
-                    f"[主动消息] 添加 {self._get_session_log_str(session_id, session_config)} 的恢复任务到调度器时失败喵: {e}"
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-SCHEDULER-007",
+                    "添加恢复任务到调度器失败",
+                    e,
                 )
                 if self._clear_session_schedule_state(session_id):
                     cleaned_runtime_state += 1
@@ -484,6 +540,8 @@ class SchedulerMixin:
         self, session_id: str, reset_counter: bool = False
     ) -> None:
         """安排下一次主动聊天并立即将状态持久化到文件。"""
+        if getattr(self, "_terminating", False):
+            return
         normalized_session_id = self._normalize_session_id(session_id)
         session_config = self._get_session_config(normalized_session_id)
         if not session_config:
@@ -550,6 +608,8 @@ class SchedulerMixin:
 
     async def _reset_group_silence_timer(self, session_id: str) -> None:
         """重置指定群聊的沉默倒计时。"""
+        if getattr(self, "_terminating", False):
+            return
         normalized_session_id = self._normalize_session_id(session_id)
         session_config = self._get_session_config(normalized_session_id)
         if not session_config or not session_config.get("enable", False):
@@ -561,8 +621,12 @@ class SchedulerMixin:
                 try:
                     self.group_timers[timer_key].cancel()
                 except Exception as e:
-                    logger.warning(
-                        f"[主动消息] 取消 {self._get_session_log_str(timer_key, session_config)} 的旧计时器时出错喵: {e}"
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-SCHEDULER-008",
+                        "取消旧群聊计时器时出错",
+                        e,
                     )
                 finally:
                     del self.group_timers[timer_key]
@@ -572,6 +636,8 @@ class SchedulerMixin:
         # 群聊沉默回调仅负责投递受控协程，
         # 真正的状态检查与调度写入放到异步上下文中统一处理。
         def _schedule_callback(captured_session_id=normalized_session_id):
+            if getattr(self, "_terminating", False):
+                return
             self._track_task(
                 asyncio.create_task(
                     self._handle_group_silence_callback(
@@ -586,12 +652,20 @@ class SchedulerMixin:
                 idle_minutes * 60, _schedule_callback
             )
         except Exception as e:
-            logger.error(f"[主动消息] 设置沉默倒计时失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-SCHEDULER-004",
+                "设置沉默倒计时失败",
+                e,
+            )
 
     async def _handle_auto_trigger_callback(
         self, session_id: str, auto_trigger_minutes: int | float
     ) -> None:
         """在异步上下文中处理自动触发回调，避免直接在定时器回调里操作共享状态。"""
+        if getattr(self, "_terminating", False):
+            return
         try:
             async with self.data_lock:
                 # 计时器已被取消则直接跳过
@@ -655,7 +729,13 @@ class SchedulerMixin:
                     f"[主动消息] {self._get_session_log_str(session_id, current_config)} 满足条件，自动触发任务已创建喵！执行时间 (非持久化): {run_date.strftime('%Y-%m-%d %H:%M:%S')} 喵"
                 )
         except Exception as e:
-            logger.error(f"[主动消息] 自动触发任务创建失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-SCHEDULER-005",
+                "自动触发任务创建失败",
+                e,
+            )
         finally:
             # 触发一次后移除计时器
             if session_id in self.auto_trigger_timers:
@@ -665,6 +745,8 @@ class SchedulerMixin:
         self, session_id: str, idle_minutes: int | float
     ) -> None:
         """在异步上下文中处理群聊沉默回调，避免直接在定时器回调里操作共享状态。"""
+        if getattr(self, "_terminating", False):
+            return
         try:
             async with self.data_lock:
                 # 若计时器已被重置则跳过
@@ -701,7 +783,13 @@ class SchedulerMixin:
                 f"[主动消息] {self._get_session_log_str(session_id, current_config)} 已沉默 {idle_minutes} 分钟，开始计划主动消息喵。(当前未回复次数: {current_unanswered})"
             )
         except Exception as e:
-            logger.error(f"[主动消息] 沉默倒计时回调函数执行失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-SCHEDULER-006",
+                "沉默倒计时回调函数执行失败",
+                e,
+            )
 
     def _cleanup_expired_session_states(self, current_time: float) -> None:
         """清理过期的会话状态，防止内存泄漏。"""

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import zoneinfo
 from typing import Any
 
@@ -11,6 +10,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import astrbot.api.star as star
 from astrbot.api import logger
+
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
 
 
 class LifecycleMixin:
@@ -30,11 +34,6 @@ class LifecycleMixin:
     session_data_file: Any
     web_admin_server: Any
     notification_center: Any
-    telemetry: Any
-    _heartbeat_task: asyncio.Task[None] | None
-    _original_exception_handler: Any
-    _exception_handler_installed: bool
-    _start_time: float
 
     async def initialize(self) -> None:
         """插件的异步初始化函数。"""
@@ -45,8 +44,12 @@ class LifecycleMixin:
         try:
             await self._validate_config()
         except Exception as e:
-            logger.warning(
-                f"[主动消息] 配置验证发现问题喵: {e}，将继续使用默认设置喵。"
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-LIFECYCLE-000",
+                "配置验证发现问题，将继续使用默认设置",
+                e,
             )
 
         # 加载持久化数据
@@ -87,27 +90,14 @@ class LifecycleMixin:
         try:
             self.timezone = zoneinfo.ZoneInfo(self.context.get_config().get("timezone"))
         except (zoneinfo.ZoneInfoNotFoundError, TypeError, KeyError, ValueError) as e:
-            logger.warning(
-                f"[主动消息] 时区配置无效或未配置喵 ({e})，将使用服务器系统时区作为备用喵。"
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-LIFECYCLE-015",
+                "时区配置无效或未配置，将使用服务器系统时区",
+                e,
             )
             self.timezone = None
-
-        # 初始化遥测生命周期
-        if self.telemetry and self.telemetry.enabled:
-            loop = asyncio.get_running_loop()
-            self._original_exception_handler = loop.get_exception_handler()
-            loop.set_exception_handler(self._handle_asyncio_exception)
-            self._exception_handler_installed = True
-            self._start_time = time.monotonic()
-            # 启动阶段立即上报一次 startup，便于统计活跃安装量与运行环境分布。
-            self._track_task(asyncio.create_task(self.telemetry.track_startup()))
-            # 同时上报一次经脱敏后的配置快照，用于分析默认值与用户配置趋势。
-            self._track_task(
-                asyncio.create_task(self.telemetry.track_config(dict(self.config)))
-            )
-            # 心跳任务用于长期运行实例的活跃度统计，与启动事件互补。
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-            logger.debug("[主动消息] 已启动遥测心跳任务喵。")
 
         # 启动调度器
         self.scheduler = AsyncIOScheduler(timezone=self.timezone)
@@ -125,79 +115,40 @@ class LifecycleMixin:
             if self.notification_center:
                 await self.notification_center.start()
         except Exception as e:
-            logger.error(f"[主动消息] 通知系统启动失败喵: {e}")
-            if self.telemetry and self.telemetry.enabled:
-                # 这里单独标记模块来源，便于区分“通知系统不可用”与主流程异常。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_error(
-                            e,
-                            module="core.plugin_lifecycle.initialize.notification_center",
-                        )
-                    )
-                )
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-LIFECYCLE-001",
+                "通知系统启动失败",
+                e,
+            )
 
         # 启动 Web 管理端
         try:
             if self.web_admin_server:
                 await self.web_admin_server.start()
         except (SystemExit, OSError) as e:
-            logger.error(f"[主动消息] Web 管理端启动失败喵，已隔离处理: {e}")
-            if self.telemetry and self.telemetry.enabled:
-                # Web 管理端属于附加能力，错误会上报但不会阻断插件主体运行。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_error(
-                            e,
-                            module="core.plugin_lifecycle.initialize.web_admin_server",
-                        )
-                    )
-                )
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-LIFECYCLE-002",
+                "Web 管理端启动失败，已隔离处理",
+                e,
+            )
         except Exception as e:
-            logger.error(f"[主动消息] Web 管理端启动失败喵: {e}")
-            if self.telemetry and self.telemetry.enabled:
-                # Web 管理端属于附加能力，错误会上报但不会阻断插件主体运行。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_error(
-                            e,
-                            module="core.plugin_lifecycle.initialize.web_admin_server",
-                        )
-                    )
-                )
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-LIFECYCLE-003",
+                "Web 管理端启动失败",
+                e,
+            )
 
     async def terminate(self) -> None:
         """插件被卸载或停用时调用的清理函数。"""
         logger.info("[主动消息] 收到插件终止指令，开始清理资源喵。")
+        self._terminating = True
         try:
-            if self._heartbeat_task:
-                self._heartbeat_task.cancel()
-                try:
-                    await self._heartbeat_task
-                except asyncio.CancelledError:
-                    pass
-                self._heartbeat_task = None
-
-            if self.telemetry and self.telemetry.enabled and self._start_time > 0:
-                runtime_seconds = time.monotonic() - self._start_time
-                # 终止前直接等待一次 shutdown 上报，避免任务刚创建就被后续清理逻辑取消。
-                try:
-                    await self.telemetry.track_shutdown(
-                        exit_code=0, runtime_seconds=runtime_seconds
-                    )
-                except Exception as e:
-                    logger.debug(f"[主动消息] shutdown 遥测上报失败喵: {e}")
-                # 再清理其余挂起的 telemetry tasks，避免遗留后台任务。
-                await self._cleanup_telemetry_tasks()
-
-            if getattr(self, "_exception_handler_installed", False):
-                loop = asyncio.get_running_loop()
-                # 恢复条件取决于“是否曾经接管过异常处理器”，
-                # 而不是 terminate 时 telemetry 的当前启用状态。
-                # 原处理器即使是 None（表示默认处理器），也应完整恢复。
-                loop.set_exception_handler(self._original_exception_handler)
-                self._original_exception_handler = None
-                self._exception_handler_installed = False
             # 取消群聊沉默计时器
             timer_count = len(self.group_timers)
             for session_id, timer in self.group_timers.items():
@@ -207,7 +158,13 @@ class LifecycleMixin:
                         f"[主动消息] 已取消 {self._get_session_log_str(session_id)} 的沉默计时器喵。"
                     )
                 except Exception as e:
-                    logger.warning(f"[主动消息] 取消计时器时出错喵: {e}")
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-LIFECYCLE-005",
+                        "取消计时器时出错",
+                        e,
+                    )
 
             self.group_timers.clear()
             logger.info(
@@ -223,16 +180,56 @@ class LifecycleMixin:
                         f"[主动消息] 已取消 {self._get_session_log_str(session_id)} 的自动触发计时器喵。"
                     )
                 except Exception as e:
-                    logger.warning(f"[主动消息] 取消自动触发计时器时出错喵: {e}")
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-LIFECYCLE-006",
+                        "取消自动触发计时器时出错",
+                        e,
+                    )
 
             self.auto_trigger_timers.clear()
             logger.info(f"[主动消息] 已取消 {auto_trigger_count} 个自动触发计时器喵。")
+
+            # 计时器和入口已封住后，再停止会创建异步工作的附加组件，避免它们
+            # 在任务清理窗口重新投递主动消息或通知轮询。
+            if self.web_admin_server:
+                try:
+                    await self.web_admin_server.stop()
+                except Exception as e:
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-LIFECYCLE-011",
+                        "停止 Web 管理端时出错",
+                        e,
+                    )
+
+            if self.notification_center:
+                try:
+                    await self.notification_center.stop()
+                except Exception as e:
+                    log_safe_exception(
+                        logger,
+                        "warning",
+                        "PC-LIFECYCLE-012",
+                        "停止通知系统时出错",
+                        e,
+                    )
+
+            await self._cleanup_background_tasks()
 
             # 终止前写入最近聊天记录，避免插件重载后丢失已记录的上下文
             try:
                 await self._flush_runtime_context_cache_save()
             except Exception as e:
-                logger.error(f"[主动消息] 保存最近聊天记录时出错：{e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-LIFECYCLE-007",
+                    "保存最近聊天记录时出错",
+                    e,
+                )
 
             # 清理调度器任务（逐个移除后再 shutdown，便于日志定位）
             if self.scheduler and self.scheduler.running:
@@ -242,14 +239,26 @@ class LifecycleMixin:
                     for job in jobs:
                         try:
                             self.scheduler.remove_job(job.id)
-                            logger.debug(f"[主动消息] 已移除调度器任务喵: {job.id}")
+                            logger.debug("[主动消息] 已移除一条调度器任务喵。")
                         except Exception as e:
-                            logger.warning(f"[主动消息] 移除调度器任务时出错喵: {e}")
+                            log_safe_exception(
+                                logger,
+                                "warning",
+                                "PC-LIFECYCLE-008",
+                                "移除调度器任务时出错",
+                                e,
+                            )
 
                     self.scheduler.shutdown()
                     logger.info("[主动消息] 调度器已关闭喵。")
                 except Exception as e:
-                    logger.error(f"[主动消息] 关闭调度器时出错喵: {e}")
+                    log_safe_exception(
+                        logger,
+                        "error",
+                        "PC-LIFECYCLE-009",
+                        "关闭调度器时出错",
+                        e,
+                    )
 
             # 终止前最后一次持久化，尽量保留当前会话状态
             if self.data_lock:
@@ -258,37 +267,22 @@ class LifecycleMixin:
                         await self._save_data_internal()
                     logger.info("[主动消息] 会话数据已保存喵。")
                 except Exception as e:
-                    logger.error(f"[主动消息] 保存数据时出错喵: {e}")
-
-            # 停止 Web 管理端
-            if self.web_admin_server:
-                try:
-                    await self.web_admin_server.stop()
-                except Exception as e:
-                    logger.warning(f"[主动消息] 停止 Web 管理端时出错喵: {e}")
-
-            # 停止通知系统
-            if self.notification_center:
-                try:
-                    await self.notification_center.stop()
-                except Exception as e:
-                    logger.warning(f"[主动消息] 停止通知系统时出错喵: {e}")
-        except Exception as e:
-            logger.error(f"[主动消息] 生命周期终止阶段发生异常喵: {e}")
-            if self.telemetry and self.telemetry.enabled:
-                try:
-                    # terminate 阶段仍做 best-effort 错误上报，但绝不因为遥测再抛出新异常。
-                    await self.telemetry.track_error(
-                        e, module="core.plugin_lifecycle.terminate"
+                    log_safe_exception(
+                        logger,
+                        "error",
+                        "PC-LIFECYCLE-010",
+                        "保存数据时出错",
+                        e,
                     )
-                except Exception:
-                    pass
-        finally:
-            if self.telemetry:
-                try:
-                    await self.telemetry.close()
-                except Exception as e:
-                    logger.debug(f"[主动消息] 遥测会话关闭失败喵: {e}")
 
+        except Exception as e:
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-LIFECYCLE-013",
+                "生命周期终止阶段发生异常",
+                e,
+            )
+        finally:
             # 确保终止日志一定输出
             logger.info("[主动消息] 主动消息插件已终止喵。")

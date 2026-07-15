@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         感谢您抽出时间提出新功能建议，请准确解释您的想法。
+        当前仓库是 Sisyphbaous-DT-Project 维护的 Fork。若建议与既有行为有关，请注明使用的仓库与版本，并说明 DBJD-CR 原项目是否已有相关实现。
 
   - type: textarea
     attributes:

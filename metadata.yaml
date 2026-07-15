@@ -1,8 +1,8 @@
 name: "astrbot_plugin_proactive_chat"
 display_name: "主动消息 (Proactive Chat)"
-author: "DBJD-CR & Gemini & Kimi & GPT"
-version: "v1.3.0"
-desc: "一个能让 Bot 在私聊和群聊中发起主动消息的插件，拥有上下文感知、持久化数据、动态情绪、免打扰时段和 TTS 集成。还有独立 WebUI，可进行个性化配置。"
+author: "DBJD-CR & Gemini & Kimi & GPT / Fork maintained by Sisyphbaous-DT-Project"
+version: "v1.3.1"
+desc: "基于 DBJD-CR 原项目继续维护的 Fork：支持私聊和群聊主动消息、上下文感知、持久化、TTS 与独立 WebUI，并增强装饰插件兼容性、稳定性和隐私保护。"
 repo: "https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat"
 astrbot_version: ">=4.8.0"
 support_platforms:

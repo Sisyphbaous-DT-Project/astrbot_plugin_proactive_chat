@@ -32,6 +32,17 @@
                 // 删除失败时无需中断业务流程。
             }
         },
+        handleAuthFailure: function () {
+            // 令牌失效后不能让旧页面继续展示并反复请求受保护接口。
+            window.AuthUtil.clearToken();
+            if (window.__PROACTIVE_AUTH_PENDING || window.__PROACTIVE_AUTH_RELOADING) {
+                return;
+            }
+            window.__PROACTIVE_AUTH_RELOADING = true;
+            if (window.location && typeof window.location.reload === 'function') {
+                window.location.reload();
+            }
+        },
         withAuthHeaders: function (headers) {
             const token = window.AuthUtil.getToken();
             // 始终先复制一份 headers，避免调用方对象被原地修改。
@@ -44,4 +55,3 @@
         }
     };
 })();
-

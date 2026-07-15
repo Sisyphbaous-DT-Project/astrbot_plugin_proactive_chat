@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         感谢您抽出时间提出设计或交互建议！如果您对管理面板、配置流程、信息展示、反馈机制或整体使用体验有改进想法，欢迎通过该模板与我们分享。
+        当前仓库是 Sisyphbaous-DT-Project 维护的 Fork。若建议源于现有行为，请注明使用的仓库与版本，以及 DBJD-CR 原项目是否也有相同行为。
 
   - type: textarea
     attributes:

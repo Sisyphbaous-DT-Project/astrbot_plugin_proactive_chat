@@ -72,10 +72,12 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
 
     // 对输入控件使用一层本地态，便于处理 Slider / 文本输入中的过渡值。
     const [localValue, setLocalValue] = useState(value);
+    const [jsonError, setJsonError] = useState('');
 
     useEffect(() => {
         // 当外部配置值变化（如切换会话 / 回滚 / 重新加载）时，同步重置局部编辑态。
         setLocalValue(value);
+        setJsonError('');
     }, [value]);
 
     const handleChange = (newValue) => {
@@ -341,6 +343,76 @@ function ConfigField({ fieldKey, schema, value, onChange, depth = 0, path = '', 
                         }}
                     />
                 </Box>
+            </Box>
+        );
+    }
+
+    // 对象列表使用 JSON 编辑器，避免普通字符串列表把对象数组变成 [object Object]。
+    const isObjectList =
+        (schema.type === 'list' || schema.type === 'array') &&
+        schema.items &&
+        typeof schema.items === 'object' &&
+        !schema.items.type;
+    if (isObjectList) {
+        const jsonValue = typeof localValue === 'string'
+            ? localValue
+            : JSON.stringify(Array.isArray(localValue) ? localValue : [], null, 2);
+
+        return (
+            <Box sx={{
+                py: 1.5,
+                borderBottom: depth === 0 ? 'none' : '1px solid',
+                borderColor: 'divider',
+                '&:last-child': { borderBottom: 'none' }
+            }}>
+                <Box sx={{ mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '0.9rem' }}>
+                        {schema.description || fieldKey}
+                    </Typography>
+                    {schema.hint && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                            {schema.hint}
+                        </Typography>
+                    )}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        请使用 JSON 数组编辑，每个批次是一个对象。
+                    </Typography>
+                </Box>
+                <TextField
+                    fullWidth
+                    multiline
+                    minRows={8}
+                    maxRows={20}
+                    size="small"
+                    value={jsonValue}
+                    onChange={(e) => {
+                        const raw = e.target.value;
+                        setLocalValue(raw);
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (!Array.isArray(parsed) || parsed.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
+                                throw new Error('必须是对象数组');
+                            }
+                            setJsonError('');
+                            onChange(parsed);
+                        } catch (error) {
+                            setJsonError('JSON 格式暂时不完整或不是对象数组，修正后才能保存。');
+                        }
+                    }}
+                    error={Boolean(jsonError)}
+                    helperText={jsonError || '示例：[ { "batch_name": "安静群" } ]'}
+                    placeholder="[]"
+                    variant="outlined"
+                    sx={{
+                        '& .MuiOutlinedInput-root': {
+                            alignItems: 'flex-start',
+                            borderRadius: 1.5,
+                            bgcolor: 'background.paper',
+                            fontFamily: 'monospace',
+                            '&.Mui-focused > fieldset': { borderColor: 'primary.main' }
+                        }
+                    }}
+                />
             </Box>
         );
     }
@@ -881,6 +953,7 @@ function ConfigRenderer() {
                 const payload = {
                     friend_settings: cleanedConfig.friend_settings,
                     group_settings: cleanedConfig.group_settings,
+                    group_batches: cleanedConfig.group_batches,
                     web_admin: cleanedConfig.web_admin,
                 };
                 await api.updateConfig(payload);
@@ -1286,4 +1359,3 @@ function ConfigRenderer() {
 
 window.ConfigRenderer = ConfigRenderer;
 })();
-

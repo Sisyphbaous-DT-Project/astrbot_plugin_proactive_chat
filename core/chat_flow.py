@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import random
 import time
@@ -11,7 +10,15 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..utils.time_utils import is_quiet_time
+try:
+    from ..utils.time_utils import is_quiet_time
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.time_utils import is_quiet_time
+
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
 
 
 class ProactiveCoreMixin:
@@ -20,7 +27,6 @@ class ProactiveCoreMixin:
     data_lock: Any
     session_data: dict
     last_message_times: dict[str, float]
-    telemetry: Any
     manual_trigger_sessions: set[str]
     web_admin_server: Any
 
@@ -35,7 +41,13 @@ class ProactiveCoreMixin:
             try:
                 await self.web_admin_server._broadcast_update("jobs")
             except Exception as e:
-                logger.debug(f"[主动消息] 广播手动触发状态更新失败喵: {e}")
+                log_safe_exception(
+                    logger,
+                    "debug",
+                    "PC-CHAT-001",
+                    "广播手动触发状态更新失败",
+                    e,
+                )
 
     async def _is_chat_allowed(self, session_id: str) -> tuple[bool, str]:
         """检查是否允许进行主动聊天，并返回阻断原因。"""
@@ -84,16 +96,23 @@ class ProactiveCoreMixin:
                         if isinstance(last, dict):
                             last_role = str(last.get("role") or "未知")
             logger.info(
-                f"[主动消息] 主动消息发送后的对话历史状态喵，conv_id={conv_id}，"
+                f"[主动消息] 主动消息发送后的对话历史状态喵，"
                 f"当前历史 {history_len} 条，最后一条角色：{last_role}。"
             )
         except Exception as e:
-            logger.debug(f"[主动消息] 检查对话历史状态失败喵: {e}", exc_info=True)
+            log_safe_exception(
+                logger,
+                "debug",
+                "PC-CHAT-002",
+                "检查对话历史状态失败",
+                e,
+            )
 
         parsed = self._parse_session_id(state_session_id)
-        is_private_session = parsed and (
-            "Friend" in parsed[1] or "Private" in parsed[1]
-        )
+        is_private_session = parsed and parsed[1] in {
+            "FriendMessage",
+            "PrivateMessage",
+        }
         session_config = None
         scheduled_job_payload = None
 
@@ -157,6 +176,8 @@ class ProactiveCoreMixin:
 
     async def check_and_chat(self, session_id: str) -> None:
         """由定时任务触发的核心函数，完成一次完整的主动消息流程。"""
+        if getattr(self, "_terminating", False):
+            return
         normalized_session_id = self._normalize_session_id(session_id)
         state_session_id = normalized_session_id
         delivery_session_id = session_id
@@ -204,22 +225,6 @@ class ProactiveCoreMixin:
             logger.info(
                 f"[主动消息] 开始生成第 {unanswered_count + 1} 次主动消息喵，当前未回复次数: {unanswered_count} 次喵。"
             )
-            if self.telemetry and self.telemetry.enabled:
-                # 在真正进入主流程时记录一次 feature，用于统计主动消息任务的触发频率与会话类型分布。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_feature(
-                            "proactive_task_started",
-                            {
-                                "session_type": session_config.get(
-                                    "_session_type", "unknown"
-                                ),
-                                "unanswered_count": unanswered_count,
-                            },
-                        )
-                    )
-                )
-
             # 准备上下文与人格
             request_package = await self._prepare_llm_request(normalized_session_id)
             if not request_package:
@@ -249,6 +254,10 @@ class ProactiveCoreMixin:
             )
             if not response_text:
                 await self._schedule_next_chat_and_save(state_session_id)
+                return
+
+            # 生成可能跨越插件关闭窗口；关闭已开始时丢弃结果，不能再发送旧实例消息。
+            if getattr(self, "_terminating", False):
                 return
 
             # 检查生成期间是否有新消息
@@ -300,19 +309,23 @@ class ProactiveCoreMixin:
 
             # 群聊由沉默倒计时驱动，不依赖持久化调度字段，故在此清理残留状态
             parsed = self._parse_session_id(state_session_id)
-            is_group_session = parsed and ("Group" in parsed[1] or "Guild" in parsed[1])
+            is_group_session = parsed and parsed[1] in {
+                "GroupMessage",
+                "GuildMessage",
+            }
             if is_group_session:
                 async with self.data_lock:
                     if self._clear_session_schedule_state(state_session_id):
                         await self._save_data_internal()
 
         except Exception as e:
-            error_type = type(e).__name__
-            error_msg = str(e)
-
-            logger.error("[主动消息] check_and_chat 任务发生致命错误喵:")
-            logger.error(f"[主动消息] 错误类型喵: {error_type}")
-            logger.error(f"[主动消息] 错误信息喵: {error_msg}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-CHAT-003",
+                "check_and_chat 任务发生致命错误",
+                e,
+            )
 
             # 清理失败任务的持久化调度痕迹，避免下次启动误恢复
             try:
@@ -320,7 +333,13 @@ class ProactiveCoreMixin:
                     if self._clear_session_schedule_state(state_session_id):
                         await self._save_data_internal()
             except Exception as clean_e:
-                logger.debug(f"[主动消息] 清理失败任务数据时出错喵: {clean_e}")
+                log_safe_exception(
+                    logger,
+                    "debug",
+                    "PC-CHAT-004",
+                    "清理失败任务数据时出错",
+                    clean_e,
+                )
 
             # 尝试补偿性重调度，尽量维持会话后续触发能力
             try:
@@ -332,20 +351,16 @@ class ProactiveCoreMixin:
                     f"[主动消息] {self._get_session_log_str(state_session_id)} 的任务重新调度成功喵。"
                 )
             except Exception as se:
-                logger.error(f"[主动消息] 在错误处理中重新调度失败喵: {se}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-CHAT-005",
+                    "在错误处理中重新调度失败",
+                    se,
+                )
                 logger.error(
                     f"[主动消息] {self._get_session_log_str(state_session_id)} 可能需要手动干预喵。"
                 )
 
-            if self.telemetry and self.telemetry.enabled:
-                # 主流程致命错误统一挂到 check_and_chat 模块名下，便于和子链路异常区分统计。
-                self._track_task(
-                    asyncio.create_task(
-                        self.telemetry.track_error(
-                            e,
-                            module="core.chat_flow.check_and_chat",
-                        )
-                    )
-                )
         finally:
             await self._clear_manual_trigger_state(normalized_session_id)

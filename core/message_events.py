@@ -8,6 +8,11 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+
 
 class EventsMixin:
     """事件监听相关混入类。"""
@@ -153,7 +158,13 @@ class EventsMixin:
                     event, "sender_id", None
                 )
         except Exception as e:
-            logger.debug(f"[主动消息] 获取群聊发送者ID失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "debug",
+                "PC-EVENT-001",
+                "获取群聊发送者 ID 失败",
+                e,
+            )
 
         self_id = (
             event.get_self_id()
@@ -298,7 +309,7 @@ class EventsMixin:
                         f"[主动消息] {self._get_session_log_str(normalized_session_id, session_config)} 的用户已回复， 未回复计数器已重置喵。"
                     )
 
-                if "group" in normalized_session_id.lower():
+                if self._is_group_session(normalized_session_id):
                     changed = (
                         self._clear_session_schedule_state(normalized_session_id)
                         or changed
@@ -315,7 +326,7 @@ class EventsMixin:
         await self._cache_runtime_bot_message_from_event(event)
 
         # 下面的调度清理只对群聊生效；私聊只需要记录 Bot 发言缓存。
-        if "group" not in normalized_session_id.lower():
+        if not self._is_group_session(normalized_session_id):
             return
 
         # Bot 自己发言后，清理已计划的调度任务，避免重复触发
@@ -327,8 +338,12 @@ class EventsMixin:
                 f"[主动消息] Bot已发言，已取消 {self._get_session_log_str(normalized_session_id)} 的主动消息任务喵。"
             )
         except Exception as e:
-            logger.debug(
-                f"[主动消息] {self._get_session_log_str(normalized_session_id)} 没有待取消的调度任务喵: {e}"
+            log_safe_exception(
+                logger,
+                "debug",
+                "PC-EVENT-002",
+                "取消发送后调度任务时出错",
+                e,
             )
 
         # 兜底清理同目标任务
@@ -363,6 +378,10 @@ class EventsMixin:
             if normalized_session_id in self.session_temp_state:
                 del self.session_temp_state[normalized_session_id]
         except Exception as e:
-            logger.error(
-                f"[主动消息] {self._get_session_log_str(session_id)} 的 after_message_sent 处理异常喵: {e}"
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-EVENT-003",
+                "after_message_sent 处理异常",
+                e,
             )

@@ -10,6 +10,13 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .group_batch_config import normalize_session_settings
+
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+
 
 class SessionOverrideManager:
     """负责会话级差异配置的加载、存储与合并。"""
@@ -56,7 +63,13 @@ class SessionOverrideManager:
             else:
                 self._overrides = {}
         except Exception as e:
-            logger.warning(f"[主动消息] 读取会话差异配置失败喵，将使用空配置: {e}")
+            log_safe_exception(
+                logger,
+                "warning",
+                "PC-OVERRIDE-001",
+                "读取会话差异配置失败，将使用空配置",
+                e,
+            )
             self._overrides = {}
 
     async def _save(self) -> None:
@@ -75,7 +88,13 @@ class SessionOverrideManager:
         try:
             await asyncio.to_thread(_do_write)
         except Exception as e:
-            logger.error(f"[主动消息] 保存会话差异配置失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-OVERRIDE-002",
+                "保存会话差异配置失败",
+                e,
+            )
             try:
                 if temp_file.exists():
                     temp_file.unlink()
@@ -89,11 +108,22 @@ class SessionOverrideManager:
         return copy.deepcopy(self._overrides.get(session_id, {}))
 
     async def set_override(
-        self, session_id: str, override_patch: dict[str, Any]
+        self,
+        session_id: str,
+        override_patch: dict[str, Any],
+        *,
+        session_type: str = "friend",
     ) -> None:
         if not isinstance(override_patch, dict):
             raise ValueError("override_patch 必须是对象")
 
+        normalize_session_settings(
+            copy.deepcopy(override_patch),
+            session_type=session_type,
+            strict=True,
+            fill_defaults=False,
+            path="override",
+        )
         patch = self._sanitize_patch(copy.deepcopy(override_patch))
         async with self._lock:
             if patch:
@@ -120,9 +150,19 @@ class SessionOverrideManager:
         session_id: str,
         base_config: dict[str, Any],
         effective_config: dict[str, Any],
+        *,
+        session_type: str = "friend",
     ) -> None:
         if not isinstance(effective_config, dict):
             raise ValueError("effective_config 必须是对象")
+
+        normalize_session_settings(
+            copy.deepcopy(effective_config),
+            session_type=session_type,
+            strict=True,
+            fill_defaults=False,
+            path="effective",
+        )
 
         sanitized_base = self._sanitize_patch(copy.deepcopy(base_config)) or {}
         sanitized_effective = (
@@ -131,7 +171,7 @@ class SessionOverrideManager:
 
         patch = self.compute_diff(sanitized_base, sanitized_effective)
         patch = self._sanitize_patch(patch)
-        await self.set_override(session_id, patch or {})
+        await self.set_override(session_id, patch or {}, session_type=session_type)
 
     @classmethod
     def deep_merge(cls, base: Any, patch: Any) -> Any:

@@ -50,7 +50,6 @@ class RuntimeCacheHarness(RuntimeContextCacheMixin):
     def __init__(self, data_dir: Path | None = None) -> None:
         self.runtime_context_cache = RuntimeContextCache()
         self.timezone = ZoneInfo("Asia/Shanghai")
-        self.telemetry = None
         self.session_data: dict = {}
         self._session_configs: dict[str, dict] = {}
         self.config: dict = {}
@@ -73,7 +72,9 @@ class RuntimeCacheHarness(RuntimeContextCacheMixin):
     def _normalize_session_id(self, session_id: str) -> str:
         return session_id
 
-    def _get_session_log_str(self, session_id: str, session_config: dict | None = None) -> str:
+    def _get_session_log_str(
+        self, session_id: str, session_config: dict | None = None
+    ) -> str:
         return session_id
 
     def _parse_bool_setting(self, value, default: bool) -> bool:
@@ -221,7 +222,6 @@ class SenderHarness(SenderMixin, RuntimeCacheHarness):
         self.context = SimpleNamespace(
             get_using_tts_provider=lambda umo=None: None,
         )
-        self.telemetry = None
         self._send_chain_with_hooks = AsyncMock(return_value=True)
         self._reset_group_silence_timer = AsyncMock()
 
@@ -235,8 +235,6 @@ class SenderHarness(SenderMixin, RuntimeCacheHarness):
                 "segmented_reply_settings": {"enable": False},
             },
         )
-
-
 
 
 @pytest.mark.asyncio
@@ -467,6 +465,81 @@ async def test_send_proactive_message_records_runtime_cache_after_success() -> N
 
 
 @pytest.mark.asyncio
+async def test_runtime_cache_dedupes_proactive_send_and_after_sent_event() -> None:
+    plugin = RuntimeCacheHarness()
+    session_id = "aiocqhttp:FriendMessage:40001"
+    plugin._session_configs[session_id] = {
+        "enable": True,
+        "context_settings": {"runtime_cache_enable": True},
+    }
+
+    added_direct = await plugin._cache_runtime_bot_message_direct(
+        session_id=session_id,
+        text="同一条主动消息",
+        source="proactive_send",
+    )
+    added_after_sent = await plugin._cache_runtime_bot_message_direct(
+        session_id=session_id,
+        text="同一条主动消息",
+        source="after_message_sent",
+        message_id="platform-msg-1",
+    )
+
+    records, record_count = plugin._load_runtime_context_cache_records(
+        session_id,
+        rounds=1,
+        include_bot_messages=True,
+    )
+
+    assert added_direct is True
+    assert added_after_sent is False
+    assert record_count == 1
+    assert records[0].source == "proactive_send"
+
+
+def test_runtime_cache_keeps_same_source_messages_with_distinct_ids() -> None:
+    cache = RuntimeContextCache()
+    first = cache.append_bot_message(
+        ts=100.0,
+        raw_umo="qq:FriendMessage:40001",
+        normalized_umo="qq:FriendMessage:40001",
+        chat_type="private",
+        sender_id="bot",
+        text="相同正文",
+        message_id="platform-msg-1",
+        source="after_message_sent",
+    )
+    second = cache.append_bot_message(
+        ts=101.0,
+        raw_umo="qq:FriendMessage:40001",
+        normalized_umo="qq:FriendMessage:40001",
+        chat_type="private",
+        sender_id="bot",
+        text="相同正文",
+        message_id="platform-msg-2",
+        source="after_message_sent",
+    )
+
+    assert first[0] is True
+    assert second[0] is True
+    assert len(cache.messages["qq:FriendMessage:40001"]) == 2
+
+
+def test_runtime_chat_type_uses_message_type_not_platform_name() -> None:
+    harness = RuntimeCacheHarness()
+    harness._parse_session_id = lambda session_id: (
+        session_id.split(":", 2)[0],
+        session_id.split(":", 2)[1],
+        session_id.split(":", 2)[2],
+    )
+
+    assert (
+        harness._get_runtime_chat_type("group-adapter:FriendMessage:10001") == "private"
+    )
+    assert harness._get_runtime_chat_type("qq:GuildMessage:10001") == "group"
+
+
+@pytest.mark.asyncio
 async def test_persist_proactive_pair_uses_selected_astrbot_conversation() -> None:
     plugin = SenderHarness()
     raw_session_id = "aiocqhttp:FriendMessage:40002"
@@ -518,6 +591,36 @@ async def test_persist_proactive_pair_uses_selected_astrbot_conversation() -> No
     )
     assert written_again is False
     assert conv_mgr.conversations[conv_id].history == history
+
+
+@pytest.mark.asyncio
+async def test_persist_proactive_pair_replaces_isolated_assistant_without_duplicate() -> (
+    None
+):
+    plugin = SenderHarness()
+    session_id = "aiocqhttp:FriendMessage:40003"
+    conv_mgr = FakeConversationManager()
+    conv_id = await conv_mgr.new_conversation(session_id, platform_id="aiocqhttp")
+    conv_mgr.conversations[conv_id].history = [
+        {"role": "assistant", "content": "物理发送后留下的孤立回复"}
+    ]
+    plugin.context = SimpleNamespace(
+        get_using_tts_provider=lambda umo=None: None,
+        conversation_manager=conv_mgr,
+    )
+
+    written = await plugin._persist_proactive_pair_to_conversation_history(
+        session_id=session_id,
+        conv_id=conv_id,
+        user_prompt="主动任务",
+        assistant_response="物理发送后留下的孤立回复",
+    )
+
+    assert written is True
+    assert conv_mgr.conversations[conv_id].history == [
+        {"role": "user", "content": "主动任务"},
+        {"role": "assistant", "content": "物理发送后留下的孤立回复"},
+    ]
 
 
 @pytest.mark.asyncio

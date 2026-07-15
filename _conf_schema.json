@@ -686,13 +686,9 @@
     },
     "group_batches": {
         "description": "👥 群聊分批配置",
-        "type": "template_list",
+        "type": "list",
         "hint": "将群聊分成多个批次，每批可独立设置沉默时间和触发间隔。未加入任何批次的群聊仍使用上方全局群聊配置。",
-        "templates": {
-            "group_batch": {
-                "name": "群聊批次",
-                "hint": "一组共享相同主动消息策略的群聊",
-                "items": {
+        "items": {
                     "batch_name": {
                         "description": "🏷️ 批次名称",
                         "type": "string",
@@ -756,8 +752,6 @@
                         "default": "",
                         "hint": "如果为空，将使用上方群聊全局配置的提示词"
                     }
-                }
-            }
         }
     },
     "web_admin": {
@@ -814,18 +808,6 @@
                     "max": 3600,
                     "step": 10
                 }
-            }
-        }
-    },
-    "telemetry_config": {
-        "description": "📡 遥测设置",
-        "type": "object",
-        "items": {
-            "enabled": {
-                "description": "✅ 启用匿名遥测",
-                "type": "bool",
-                "default": true,
-                "hint": "启用后，插件会匿名上报配置统计与错误信息，用于帮助改进插件。不会上报会话列表、提示词和密码等敏感信息"
             }
         }
     }

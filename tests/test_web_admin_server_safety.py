@@ -95,7 +95,7 @@ async def test_web_admin_start_isolates_uvicorn_system_exit(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_terminate_stops_web_admin_when_telemetry_disabled_without_exception_flag() -> None:
+async def test_terminate_stops_web_admin_without_optional_components() -> None:
     class FakeWebAdminServer:
         def __init__(self) -> None:
             self.stopped = False
@@ -105,11 +105,7 @@ async def test_terminate_stops_web_admin_when_telemetry_disabled_without_excepti
 
     class FakeLifecycle(LifecycleMixin):
         def __init__(self) -> None:
-            self._heartbeat_task = None
-            self.telemetry = None
-            self._start_time = 0.0
-            self._original_exception_handler = None
-            self._telemetry_tasks = set()
+            self._background_tasks = set()
             self.group_timers = {}
             self.auto_trigger_timers = {}
             self.scheduler = None
@@ -118,6 +114,9 @@ async def test_terminate_stops_web_admin_when_telemetry_disabled_without_excepti
             self.notification_center = None
 
         async def _flush_runtime_context_cache_save(self) -> None:
+            return None
+
+        async def _cleanup_background_tasks(self) -> None:
             return None
 
     plugin = FakeLifecycle()

@@ -25,6 +25,16 @@
             payload = null;
         }
 
+        if (
+            response.status === 401 &&
+            !url.startsWith('/api/login') &&
+            !url.startsWith('/api/auth-info') &&
+            window.AuthUtil &&
+            typeof window.AuthUtil.handleAuthFailure === 'function'
+        ) {
+            window.AuthUtil.handleAuthFailure();
+        }
+
         if (!response.ok) {
             // 优先透传后端明确返回的 error 字段，提升前端报错可读性。
             const message = payload && payload.error ? payload.error : '请求失败';
@@ -50,4 +60,3 @@
         }
     };
 })();
-

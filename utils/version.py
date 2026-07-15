@@ -6,6 +6,8 @@ from pathlib import Path
 import astrbot
 from astrbot.api import logger
 
+from .safe_logging import log_safe_exception
+
 try:
     import tomllib
 except ImportError:
@@ -48,9 +50,16 @@ def get_plugin_version(default: str = "unknown", strip_v_prefix: bool = False) -
                             version = version.lstrip("vV")
                         return version or default
         else:
-            logger.debug(f"[主动消息] metadata.yaml 未找到喵: {metadata_path}")
+            # 路径可能包含服务器目录或用户信息，不写入日志。
+            logger.debug("[主动消息] metadata.yaml 未找到喵。")
     except Exception as e:
-        logger.error(f"[主动消息] 获取插件版本失败喵: {e}")
+        log_safe_exception(
+            logger,
+            "error",
+            "PC-VERSION-001",
+            "获取插件版本失败",
+            e,
+        )
 
     return default
 
@@ -76,9 +85,11 @@ def _get_astrbot_version_from_core_config() -> AstrBotVersionInfo | None:
             if version:
                 return AstrBotVersionInfo(version=version, source="core_config")
         except Exception as exc:
-            logger.debug(
-                "[主动消息] 从 %s 读取 AstrBot VERSION 失败喵: %s",
-                module_name,
+            log_safe_exception(
+                logger,
+                "debug",
+                "PC-VERSION-004",
+                f"从 {module_name} 读取 AstrBot VERSION 失败",
                 exc,
             )
 
@@ -98,9 +109,11 @@ def _get_astrbot_version_from_distribution() -> AstrBotVersionInfo | None:
                 dist_name,
             )
         except Exception as exc:
-            logger.debug(
-                "[主动消息] 读取 AstrBot 分发元数据失败喵 (%s): %s",
-                dist_name,
+            log_safe_exception(
+                logger,
+                "debug",
+                "PC-VERSION-005",
+                f"读取 AstrBot 分发元数据失败 ({dist_name})",
                 exc,
             )
 
@@ -117,7 +130,13 @@ def _get_astrbot_version_from_cli_module() -> AstrBotVersionInfo | None:
             return AstrBotVersionInfo(version=version, source="cli_module")
         logger.debug("[主动消息] astrbot.cli.__version__ 为空喵。")
     except Exception as exc:
-        logger.debug(f"[主动消息] 导入 astrbot.cli.__version__ 失败喵: {exc}")
+        log_safe_exception(
+            logger,
+            "debug",
+            "PC-VERSION-002",
+            "导入 astrbot.cli.__version__ 失败",
+            exc,
+        )
 
     return None
 
@@ -129,8 +148,9 @@ def _get_astrbot_version_from_pyproject(default: str = "unknown") -> AstrBotVers
         pyproject_path = astrbot_path / "pyproject.toml"
 
         if not pyproject_path.exists():
+            # 路径可能包含服务器目录或用户信息，不写入日志。
             logger.debug(
-                f"[主动消息] 无法读取 AstrBot 版本喵，pyproject.toml 不存在: {pyproject_path}"
+                "[主动消息] 无法读取 AstrBot 版本喵，pyproject.toml 不存在喵。"
             )
             return _build_unknown_version_info(default, "pyproject_missing")
 
@@ -153,12 +173,16 @@ def _get_astrbot_version_from_pyproject(default: str = "unknown") -> AstrBotVers
         if poetry_version:
             return AstrBotVersionInfo(version=poetry_version, source="pyproject")
 
-        logger.debug(
-            f"[主动消息] pyproject.toml 中未找到可用的 AstrBot 版本字段喵: {pyproject_path}"
-        )
+        logger.debug("[主动消息] pyproject.toml 中未找到可用的 AstrBot 版本字段喵。")
         return _build_unknown_version_info(default, "pyproject_version_missing")
     except Exception as e:
-        logger.debug(f"[主动消息] 获取 AstrBot 版本时出错喵: {e}")
+        log_safe_exception(
+            logger,
+            "debug",
+            "PC-VERSION-003",
+            "获取 AstrBot 版本时出错",
+            e,
+        )
         return _build_unknown_version_info(default, "pyproject_parse_failed")
 
 

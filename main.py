@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import time
+from typing import Any
 
 import astrbot.api.star as star
 from astrbot.api import logger
@@ -17,6 +17,7 @@ from astrbot.core.config.astrbot_config import AstrBotConfig
 # 导入各模块的 Mixins，用于组装插件能力
 from .core.chat_flow import ProactiveCoreMixin
 from .core.data_storage import StorageMixin
+from .core.group_batch_config import normalize_group_batches
 from .core.llm_adapter import LlmMixin
 from .core.message_events import EventsMixin
 from .core.message_sender import SenderMixin
@@ -27,9 +28,8 @@ from .core.session_config import ConfigMixin
 from .core.session_override_manager import SessionOverrideManager
 from .core.session_parser import SessionMixin
 from .core.task_scheduler import SchedulerMixin
-from .core.telemetry_manager import TelemetryManager
 from .core.web_admin_server import WebAdminServer
-from .utils.version import get_plugin_version
+from .utils.safe_logging import log_safe_exception
 
 
 class ProactiveChatPlugin(
@@ -54,6 +54,10 @@ class ProactiveChatPlugin(
 
         # 注入的配置对象（由 AstrBot 框架提供）
         self.config: AstrBotConfig = config
+        # 静态 Schema 必须兼容 AstrBot 4.8；新版面板支持模板列表时，
+        # 再在内存中升级批次编辑器，避免旧版加载阶段直接拒绝插件。
+        self._normalize_group_batches_for_runtime()
+        self._prepare_group_batches_schema()
         # 调度器与时区会在 initialize 中初始化
         self.scheduler = None  # AsyncIOScheduler 实例（initialize 中创建）
         self.timezone = None  # ZoneInfo 时区对象（initialize 中加载）
@@ -76,33 +80,29 @@ class ProactiveChatPlugin(
         # 会话差异配置管理器、通知中心与 Web 管理端
         self.session_override_manager = SessionOverrideManager(self.data_dir)
         self.notification_center = NotificationCenter(self)
-        web_admin_config = self.config.get("web_admin", {}) or {}
-        if web_admin_config.get("enabled", False):
+        web_admin_config = self.config.get("web_admin", {})
+        if isinstance(web_admin_config, dict) and web_admin_config.get(
+            "enabled", False
+        ):
             try:
                 self.web_admin_server = WebAdminServer(self)
             except Exception as e:
                 # Web 管理端属于增强能力，创建失败时仅禁用控制台，不影响插件主体继续加载。
                 self.web_admin_server = None
-                logger.error(f"[主动消息] Web 管理端组件创建失败喵，已自动禁用: {e}")
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-WEB-001",
+                    "Web 管理端组件创建失败，已自动禁用",
+                    e,
+                )
         else:
             self.web_admin_server = None
             logger.info("[主动消息] Web 管理端未启用喵，跳过独立 Web 服务初始化。")
-        # 插件版本统一通过版本工具读取，供遥测、通知系统、状态接口等多个模块复用。
-        self.version = get_plugin_version()
-        # 遥测管理器在插件实例创建阶段即初始化，但真正发请求仍由生命周期阶段控制。
-        self.telemetry = TelemetryManager(
-            config=dict(self.config),
-            plugin_version=self.version,
-        )
-        # 保存所有已创建但尚未完成的遥测任务引用，避免被垃圾回收或在终止时遗漏清理。
-        self._telemetry_tasks: set[asyncio.Task[None]] = set()
-        # 独立的心跳后台任务句柄；插件关闭时需要显式 cancel。
-        self._heartbeat_task: asyncio.Task[None] | None = None
-        # 使用单调时钟记录遥测启动时间，用于计算 uptime，避免系统时间跳变造成误差。
-        self._start_time: float = 0.0
-        # 保存原 asyncio 全局异常处理器，以便插件卸载时恢复原状。
-        self._original_exception_handler = None
-        self._exception_handler_installed = False
+        # 保存所有由插件创建的后台任务，终止时统一取消并等待收尾。
+        self._background_tasks: set[asyncio.Task[Any]] = set()
+        # 生命周期终止期间拒绝新任务，避免计时器或管理端请求在清理窗口重新创建工作。
+        self._terminating = False
 
         # 群聊沉默倒计时与自动触发计时器
         self.group_timers: dict[str, asyncio.TimerHandle] = {}
@@ -121,113 +121,113 @@ class ProactiveChatPlugin(
 
         logger.info("[主动消息] 插件实例已创建喵。")
 
-    def _track_task(self, task: asyncio.Task[None] | None) -> asyncio.Task[None] | None:
-        """登记遥测任务引用，避免任务过早释放。"""
+    @staticmethod
+    def _astrbot_supports_template_list() -> bool:
+        """检测当前 AstrBot 是否认识 template_list 配置类型。"""
+        try:
+            from astrbot.core.config.astrbot_config import DEFAULT_VALUE_MAP
+        except (ImportError, AttributeError):
+            return False
+        return (
+            isinstance(DEFAULT_VALUE_MAP, dict) and "template_list" in DEFAULT_VALUE_MAP
+        )
+
+    def _prepare_group_batches_schema(self) -> None:
+        """在新版 AstrBot 中恢复群聊批次的对象模板编辑器。"""
+        schema = getattr(self.config, "schema", None)
+        if not isinstance(schema, dict) or not self._astrbot_supports_template_list():
+            return
+
+        group_schema = schema.get("group_batches")
+        if not isinstance(group_schema, dict):
+            return
+        if group_schema.get("type") == "template_list":
+            self._normalize_group_batches_for_runtime()
+            return
+        if group_schema.get("type") != "list":
+            return
+
+        item_schema = group_schema.get("items")
+        if not isinstance(item_schema, dict):
+            return
+        if item_schema.get("type") == "object" and isinstance(
+            item_schema.get("items"), dict
+        ):
+            item_schema = item_schema["items"]
+
+        group_schema["type"] = "template_list"
+        group_schema.pop("items", None)
+        group_schema["templates"] = {
+            "group_batch": {
+                "name": "群聊批次",
+                "hint": "一组共享相同主动消息策略的群聊",
+                "items": item_schema,
+            }
+        }
+
+        batches = self.config.get("group_batches", [])
+        if isinstance(batches, list):
+            for batch in batches:
+                if isinstance(batch, dict):
+                    batch.setdefault("__template_key", "group_batch")
+
+    def _normalize_group_batches_for_runtime(self) -> None:
+        """归一化批次数据，并在新版 AstrBot 中补内部模板标识。"""
+        self.config["group_batches"] = normalize_group_batches(
+            self.config.get("group_batches", []),
+            add_template_key=self._astrbot_supports_template_list(),
+            fill_defaults=False,
+        )
+
+    def _track_task(self, task: asyncio.Task[Any] | None) -> asyncio.Task[Any] | None:
+        """登记插件后台任务，并在异常完成时安全消费异常。"""
         if task is None:
             return None
-        # 统一把遥测 task 收口到集合中，便于生命周期结束时批量取消与等待回收。
-        self._telemetry_tasks.add(task)
-        # 任务结束后自动把自己从集合移除，避免集合无限增长。
-        task.add_done_callback(self._telemetry_tasks.discard)
+        if getattr(self, "_terminating", False):
+            task.add_done_callback(self._on_background_task_done)
+            task.cancel()
+            return task
+        self._background_tasks.add(task)
+        task.add_done_callback(self._on_background_task_done)
         return task
 
-    async def _cleanup_telemetry_tasks(self) -> None:
-        """清理所有未完成的遥测任务。"""
-        if not self._telemetry_tasks:
+    def _on_background_task_done(self, task: asyncio.Task[Any]) -> None:
+        """消费插件后台任务异常，避免 asyncio 默认日志泄露异常正文。"""
+        self._background_tasks.discard(task)
+        if task.cancelled():
+            return
+        try:
+            error = task.exception()
+        except BaseException as exception:
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-ASYNC-004",
+                "读取后台任务结果失败",
+                exception,
+            )
+            return
+        if error is not None:
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-ASYNC-005",
+                "插件后台任务异常结束",
+                error,
+            )
+
+    async def _cleanup_background_tasks(self) -> None:
+        """清理所有仍在运行的插件后台任务。"""
+        if not self._background_tasks:
             return
 
-        # 先做快照，避免遍历过程中因回调移除元素导致集合发生变化。
-        pending_tasks = list(self._telemetry_tasks)
+        pending_tasks = list(self._background_tasks)
         for task in pending_tasks:
             if not task.done():
-                # 未完成任务先统一取消，防止插件关闭时仍有上报在后台悬挂。
                 task.cancel()
 
-        if pending_tasks:
-            # 吞掉所有异常，确保遥测清理失败不会影响插件主清理流程。
-            await asyncio.gather(*pending_tasks, return_exceptions=True)
-
-        self._telemetry_tasks.clear()
-
-    async def _heartbeat_loop(self) -> None:
-        """遥测心跳循环。"""
-        # 心跳间隔沿用参考插件的 12 小时策略，既能观测活跃安装量，又不会过于频繁。
-        heartbeat_interval = 43200
-        try:
-            while True:
-                if not self.telemetry or not self.telemetry.enabled:
-                    # 若用户关闭了遥测，则心跳循环仅休眠，不主动退出，方便后续动态恢复。
-                    await asyncio.sleep(heartbeat_interval)
-                    continue
-
-                # 运行时长基于 monotonic 计算，避免系统时间调整导致 uptime 倒退或突增。
-                uptime = time.monotonic() - self._start_time
-                try:
-                    await self.telemetry.track_heartbeat(uptime_seconds=uptime)
-                except Exception as e:
-                    # 心跳上报失败只记 debug，绝不影响插件主业务逻辑。
-                    logger.debug(f"[主动消息] 遥测心跳发送失败喵: {e}")
-
-                await asyncio.sleep(heartbeat_interval)
-        except asyncio.CancelledError:
-            logger.debug("[主动消息] 遥测心跳任务已取消喵。")
-            raise
-        except Exception as e:
-            logger.error(f"[主动消息] 遥测心跳循环异常喵: {e}")
-
-    def _handle_asyncio_exception(self, loop, context) -> None:
-        """全局 asyncio 异常处理器，仅处理当前插件相关异常。"""
-        # asyncio 在 task 未被 await 且异常冒泡时，会把上下文传给全局异常处理器。
-        exception = context.get("exception")
-        message = context.get("message", "未知异常")
-
-        is_plugin_exception = False
-        if exception:
-            # 逐帧检查 traceback 来源，只拦截当前插件内部抛出的未处理异步异常。
-            tb = exception.__traceback__
-            while tb is not None:
-                filename = tb.tb_frame.f_code.co_filename
-                if "astrbot_plugin_proactive_chat" in filename:
-                    is_plugin_exception = True
-                    break
-                tb = tb.tb_next
-
-        if not is_plugin_exception:
-            # 不是本插件的异常时，必须把处理权交还给原处理器，避免污染全局行为。
-            if self._original_exception_handler:
-                self._original_exception_handler(loop, context)
-            else:
-                loop.default_exception_handler(context)
-            return
-
-        if exception:
-            logger.error(f"[主动消息] 捕获未处理的异步异常喵: {exception}")
-            logger.error(f"[主动消息] 异常上下文喵: {message}")
-        else:
-            logger.error(f"[主动消息] 捕获未处理的异步错误喵: {message}")
-
-        if self.telemetry and self.telemetry.enabled:
-            task_name = "unknown"
-            future = context.get("future")
-            if future:
-                # 优先取 task 的显示名称，方便遥测平台按任务来源聚类问题。
-                task_name = getattr(future, "get_name", lambda: str(future))()
-                if not task_name or task_name == str(future):
-                    future_repr = repr(future)
-                    match = re.search(r"name='([^']+)'", future_repr)
-                    if match:
-                        task_name = match.group(1)
-
-            # 若 asyncio context 未提供具体 exception，则退化包装成 RuntimeError 进行统一上报。
-            error = exception or RuntimeError(message)
-            self._track_task(
-                asyncio.create_task(
-                    self.telemetry.track_error(
-                        error,
-                        module=f"main.unhandled_async.{task_name}",
-                    )
-                )
-            )
+        await asyncio.gather(*pending_tasks, return_exceptions=True)
+        self._background_tasks.difference_update(pending_tasks)
 
     async def terminate(self) -> None:
         """插件终止入口：委托 LifecycleMixin 清理。"""

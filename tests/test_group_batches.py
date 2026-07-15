@@ -1,5 +1,6 @@
 """群聊批次配置路由单元测试。"""
 
+import asyncio
 import json
 import sys
 import unittest
@@ -8,23 +9,10 @@ from pathlib import Path
 # 把插件目录加入路径
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PLUGIN_DIR))
-
-# Mock astrbot.api.logger
-class MockLogger:
-    @staticmethod
-    def debug(*args, **kwargs): pass
-    @staticmethod
-    def info(*args, **kwargs): pass
-    @staticmethod
-    def warning(*args, **kwargs): pass
-    @staticmethod
-    def error(*args, **kwargs): pass
-
-sys.modules["astrbot"] = type(sys)("astrbot")
-sys.modules["astrbot.api"] = type(sys)("astrbot.api")
-sys.modules["astrbot.api"].logger = MockLogger()
+sys.path.insert(0, str(PLUGIN_DIR.parent))
 
 from core.session_config import ConfigMixin  # noqa: E402
+from astrbot_plugin_proactive_chat.main import ProactiveChatPlugin  # noqa: E402
 
 
 class MockSessionParser:
@@ -46,14 +34,13 @@ class MockSessionParser:
         return session_id
 
 
-class TestConfigMixin(ConfigMixin, MockSessionParser):
+class ConfigTestMixin(ConfigMixin, MockSessionParser):
     def __init__(self, config: dict):
         self.config = config
         self.session_override_manager = None
 
 
 class TestGroupBatchConfig(unittest.TestCase):
-
     def _make_config(self, group_batches=None, group_session_list=None):
         config = {
             "friend_settings": {
@@ -84,7 +71,7 @@ class TestGroupBatchConfig(unittest.TestCase):
             },
             "group_batches": group_batches or [],
         }
-        return TestConfigMixin(config)
+        return ConfigTestMixin(config)
 
     def test_global_group_session(self):
         """未加入批次的群聊使用全局配置。"""
@@ -181,11 +168,43 @@ class TestGroupBatchConfig(unittest.TestCase):
         self.assertIsNotNone(cfg)
         self.assertEqual(cfg["proactive_prompt"], "global_group_prompt")
 
+    def test_batch_missing_fields_inherit_non_default_global_values(self):
+        """归一化不能把批次缺省字段误当成显式默认值覆盖全局配置。"""
+        config = self._make_config(
+            group_batches=[
+                {
+                    "batch_name": "只改沉默时间",
+                    "session_list": ["default:GroupMessage:550"],
+                    "group_idle_trigger_minutes": 15,
+                }
+            ]
+        ).config
+        config["group_settings"]["schedule_settings"].update(
+            {
+                "min_interval_minutes": 17,
+                "max_interval_minutes": 777,
+                "quiet_hours": "4-9",
+                "max_unanswered_times": 8,
+            }
+        )
+        mixin = ConfigTestMixin(config)
+
+        cfg = mixin._get_typed_session_config(
+            "default:GroupMessage:550", "550", "group_settings", "group"
+        )
+
+        self.assertIsNotNone(cfg)
+        self.assertEqual(cfg["group_idle_trigger_minutes"], 15)
+        self.assertEqual(cfg["schedule_settings"]["min_interval_minutes"], 17)
+        self.assertEqual(cfg["schedule_settings"]["max_interval_minutes"], 777)
+        self.assertEqual(cfg["schedule_settings"]["quiet_hours"], "4-9")
+        self.assertEqual(cfg["schedule_settings"]["max_unanswered_times"], 8)
+
     def test_group_disabled_no_batch(self):
         """全局群聊关闭时，批次也不生效。"""
         config = self._make_config().config
         config["group_settings"]["enable"] = False
-        mixin = TestConfigMixin(config)
+        mixin = ConfigTestMixin(config)
         cfg = mixin._get_typed_session_config(
             "default:GroupMessage:200", "200", "group_settings", "group"
         )
@@ -215,10 +234,8 @@ class TestGroupBatchConfig(unittest.TestCase):
             schema = json.load(f)
 
         self.assertIn("group_batches", schema)
-        self.assertEqual(schema["group_batches"]["type"], "template_list")
-        templates = schema["group_batches"]["templates"]
-        self.assertIn("group_batch", templates)
-        items = templates["group_batch"]["items"]
+        self.assertEqual(schema["group_batches"]["type"], "list")
+        items = schema["group_batches"]["items"]
         self.assertIn("batch_name", items)
         self.assertIn("session_list", items)
         self.assertIn("min_interval_minutes", items)
@@ -226,6 +243,68 @@ class TestGroupBatchConfig(unittest.TestCase):
         self.assertIn("quiet_hours", items)
         self.assertIn("max_unanswered_times", items)
         self.assertIn("proactive_prompt", items)
+
+    def test_malformed_batch_entries_are_ignored(self):
+        """面板误存字符串时不能阻断其它正常批次。"""
+        batches = [
+            "错误的字符串批次",
+            {
+                "batch_name": "正常批次",
+                "session_list": ["default:GroupMessage:600"],
+            },
+        ]
+        mixin = self._make_config(group_batches=batches)
+
+        effective = mixin._get_typed_session_config(
+            "default:GroupMessage:600", "600", "group_settings", "group"
+        )
+
+        self.assertIsNotNone(effective)
+        self.assertEqual(effective["_from_batch"], "正常批次")
+        asyncio.run(mixin._validate_config())
+
+    def test_null_batch_fields_do_not_block_other_batches(self):
+        """旧配置中 null 批次字段不能阻断正常批次的匹配。"""
+        batches = [
+            {"batch_name": "坏批次", "session_list": None},
+            {
+                "batch_name": "正常批次",
+                "session_list": ["default:GroupMessage:601"],
+                "min_interval_minutes": 45,
+            },
+        ]
+        mixin = self._make_config(group_batches=batches)
+
+        effective = mixin._get_typed_session_config(
+            "default:GroupMessage:601", "601", "group_settings", "group"
+        )
+
+        self.assertIsNotNone(effective)
+        self.assertEqual(effective["_from_batch"], "正常批次")
+        self.assertEqual(effective["schedule_settings"]["min_interval_minutes"], 45)
+
+    def test_new_astrbot_upgrades_batch_schema_in_memory(self):
+        """新版 AstrBot 只在内存中启用模板列表，不改写兼容旧版的静态 Schema。"""
+
+        class SchemaConfig(dict):
+            schema = {
+                "group_batches": {
+                    "type": "list",
+                    "items": {"batch_name": {"type": "string"}},
+                }
+            }
+
+        config = SchemaConfig(group_batches=[{"batch_name": "测试批次"}])
+        plugin = object.__new__(ProactiveChatPlugin)
+        plugin.config = config
+        # 用能力检测结果的替身固定测试新版分支，不依赖运行测试的 AstrBot 版本。
+        plugin._astrbot_supports_template_list = lambda: True
+
+        plugin._prepare_group_batches_schema()
+
+        self.assertEqual(config.schema["group_batches"]["type"], "template_list")
+        self.assertIn("group_batch", config.schema["group_batches"]["templates"])
+        self.assertEqual(config["group_batches"][0]["__template_key"], "group_batch")
 
 
 if __name__ == "__main__":

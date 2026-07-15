@@ -11,6 +11,7 @@ let __reconnectTimer = null;
 const WS_RECONNECT_BASE_DELAY_MS = 1000;
 const WS_RECONNECT_MAX_DELAY_MS = 10000;
 let __nextReconnectDelayMs = WS_RECONNECT_BASE_DELAY_MS;
+let __authRejected = false;
 
 function clearReconnectTimer() {
     if (!__reconnectTimer) return;
@@ -26,6 +27,8 @@ function resetReconnectBackoff() {
 function scheduleReconnect() {
     // 没有任何订阅者时不需要重连，避免后台空转。
     if (__wsListeners.size === 0) return;
+    // 鉴权失败需要回到登录流程，不能带着失效 token 无限重连。
+    if (__authRejected) return;
     // 已有重连任务时直接复用，防止重复排队。
     if (__reconnectTimer) return;
 
@@ -44,18 +47,23 @@ function ensureGlobalWs() {
         return;
     }
 
-    // 与 HTTP 保持相同的 token 来源，统一从 AuthUtil 中读取。
     const token = window.AuthUtil.getToken();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // 开启鉴权时通过 query 传 token；无鉴权或 no-auth 场景则不附加参数。
-    const tokenQuery = token && token !== 'no-auth' ? `?token=${encodeURIComponent(token)}` : '';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws${tokenQuery}`);
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     __globalWs = ws;
 
     ws.onopen = function () {
         // 连接恢复后重置退避，后续若再次断开可从短延迟开始。
         if (__globalWs === ws) {
             resetReconnectBackoff();
+        }
+        // 与 HTTP 保持相同的 token 来源，但 token 只走首帧 JSON，不进入 URL。
+        if (token && token !== 'no-auth') {
+            try {
+                ws.send(JSON.stringify({ type: 'auth', token }));
+            } catch (e) {
+                // 发送失败会触发 close/error 流程，交给统一重连处理。
+            }
         }
     };
 
@@ -88,12 +96,22 @@ function ensureGlobalWs() {
         }
     };
 
-    ws.onclose = function () {
+    ws.onclose = function (event) {
         // 仅处理当前活动连接的关闭事件，避免旧连接回调干扰新的连接状态。
         if (__globalWs !== ws) {
             return;
         }
         __globalWs = null;
+        if (event && event.code === 1008) {
+            __authRejected = true;
+            clearReconnectTimer();
+            if (window.AuthUtil && typeof window.AuthUtil.handleAuthFailure === 'function') {
+                window.AuthUtil.handleAuthFailure();
+            } else if (window.AuthUtil && typeof window.AuthUtil.clearToken === 'function') {
+                window.AuthUtil.clearToken();
+            }
+            return;
+        }
         // 连接关闭后自动尝试重连，覆盖插件重载等短暂不可用场景。
         scheduleReconnect();
     };
@@ -106,6 +124,7 @@ function useWebSocket(onData) {
         }
 
         // 只要有任意一个订阅者存在，就确保全局连接已建立。
+        __authRejected = false;
         ensureGlobalWs();
 
         return () => {
@@ -131,4 +150,3 @@ function useWebSocket(onData) {
 
 // 暴露为全局 Hook，供入口应用与各页面脚本直接调用。
 window.useWebSocket = useWebSocket;
-

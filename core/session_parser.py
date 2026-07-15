@@ -50,6 +50,11 @@ class SessionMixin:
 
         return None
 
+    def _is_group_session(self, session_id: str) -> bool:
+        """按 UMO 的消息类型判断群聊，避免平台名或目标 ID 误导判断。"""
+        parsed = self._parse_session_id(session_id)
+        return bool(parsed and parsed[1] in {"GroupMessage", "GuildMessage"})
+
     def _get_session_name(
         self, session_id: str, session_config: dict | None = None
     ) -> str:
@@ -115,29 +120,18 @@ class SessionMixin:
     def _get_session_log_str(
         self, session_id: str, session_config: dict | None = None
     ) -> str:
-        """
-        获取统一格式的会话日志字符串。
-
-        格式：私聊/群聊 ID (备注名)
-        """
+        """获取不包含 UMO、账号、群号或备注名的会话日志描述。"""
+        del session_config
         parsed = self._parse_session_id(session_id)
-        session_name = self._get_session_name(session_id, session_config)
-
         if not parsed:
-            return f"{session_id} ({session_name})" if session_name else session_id
+            return "会话"
 
-        # 仅用于日志展示，不参与业务逻辑
-        _, msg_type, target_id = parsed
-        type_str = "未知类型"
-        if "Friend" in msg_type or "Private" in msg_type:
-            type_str = "私聊"
-        elif "Group" in msg_type or "Guild" in msg_type:
-            type_str = "群聊"
-
-        log_str = f"{type_str} {target_id}"
-        if session_name:
-            log_str += f" ({session_name})"
-        return log_str
+        _, msg_type, _ = parsed
+        if msg_type in {"FriendMessage", "PrivateMessage"}:
+            return "私聊会话"
+        if msg_type in {"GroupMessage", "GuildMessage"}:
+            return "群聊会话"
+        return "会话"
 
     def _resolve_full_umo(
         self, target_id: str, msg_type: str, preferred_platform: str | None = None
@@ -148,7 +142,7 @@ class SessionMixin:
         优先使用首选平台（若运行中），否则尝试历史平台，再回退到当前运行平台或 default。
         """
         type_keyword = (
-            "Friend" if "Friend" in msg_type or "Private" in msg_type else "Group"
+            "Friend" if msg_type in {"FriendMessage", "PrivateMessage"} else "Group"
         )
 
         # 仅在“可用平台集合”中选择目标，过滤 webchat 等非目标实例

@@ -11,6 +11,11 @@ import aiofiles.os as aio_os
 
 from astrbot.api import logger
 
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+
 
 class StorageMixin:
     """会话持久化相关的混入类。"""
@@ -40,8 +45,12 @@ class StorageMixin:
                         )
                         self.session_data = {}
             except (OSError, json.JSONDecodeError) as e:
-                logger.error(
-                    f"[主动消息] 加载会话数据失败喵: {e}，将使用空数据启动喵。"
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-STORAGE-002",
+                    "加载会话数据失败，将使用空数据启动",
+                    e,
                 )
                 self.session_data = {}
         else:
@@ -64,7 +73,13 @@ class StorageMixin:
                 )
                 await f.write(content_to_write)
         except OSError as e:
-            logger.error(f"[主动消息] 保存会话数据失败喵: {e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-STORAGE-001",
+                "保存会话数据失败",
+                e,
+            )
 
     def _merge_session_info(self, base: dict, incoming: dict) -> dict:
         """合并两份会话数据，避免重复任务与计数错乱。"""
@@ -134,9 +149,7 @@ class StorageMixin:
             normalized_id = self._normalize_session_id(session_id)
             if normalized_id != session_id:
                 changed = True
-                logger.info(
-                    f"[主动消息] 规范化会话键: {self._get_session_log_str(session_id)} -> {normalized_id}"
-                )
+                logger.info("[主动消息] 已规范化一条会话键。")
 
             # 命中同一规范化键时执行合并，避免重复会话条目
             existing = normalized_data.get(normalized_id)
@@ -175,8 +188,6 @@ class StorageMixin:
         # 执行删除并记录日志
         for session_id in invalid_sessions:
             del self.session_data[session_id]
-            logger.info(
-                f"[主动消息] 清理了无效的会话数据: {self._get_session_log_str(session_id)}"
-            )
+            logger.info("[主动消息] 清理了一条无效会话数据。")
 
         return cleaned_count

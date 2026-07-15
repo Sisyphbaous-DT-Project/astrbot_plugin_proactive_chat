@@ -141,7 +141,7 @@ function Sidebar({ currentView, onChange }) {
                 </div>
 
                 <a
-                    href="https://github.com/DBJD-CR/astrbot_plugin_proactive_chat"
+                    href="https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="github-btn sidebar-github-card"
@@ -180,4 +180,3 @@ function Sidebar({ currentView, onChange }) {
 // 暴露到全局，供入口应用直接使用侧边栏组件。
 window.Sidebar = Sidebar;
 })();
-

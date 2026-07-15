@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         感谢您抽出时间帮助我们改进文档！如果您发现 README、配置说明、接口文档、示例或使用引导存在错误、缺失或难以理解的地方，请通过该模板告诉我们。
+        当前仓库是 Sisyphbaous-DT-Project 维护的 Fork。请说明问题涉及当前 Fork 文档，还是 DBJD-CR 原项目的历史资料。
 
   - type: textarea
     attributes:
@@ -105,7 +106,7 @@ body:
       label: 使用背景（可选）
       description: 如果该问题与你的部署方式、适配器、AstrBot 版本或插件版本有关，可以在这里补充。
       placeholder: >
-        如: AstrBot Launcher 部署, AstrBot v4.22.1, QQ 官方机器人 (Webhook 方式), 插件 v1.2.0。
+        如: AstrBot Launcher 部署, AstrBot v4.26.5, QQ 官方机器人 (Webhook 方式), Sisyphbaous-DT-Project Fork v1.3.1。
 
   - type: textarea
     attributes:

@@ -3,6 +3,11 @@
 
 感谢您有兴趣为 **AstrBot 主动消息插件** 做出贡献！无论是修复 Bug，添加新功能，还是改进文档，您的每一次贡献都能让这个项目变得更好。
 
+> [!IMPORTANT]
+> 当前贡献指南面向 [Sisyphbaous-DT-Project 维护的 Fork](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat)。原项目由 [DBJD-CR](https://github.com/DBJD-CR) 创建，当前 Fork 基于原项目 `v1.2.3` 代码线继续维护，并保留原作者、历史贡献者和 AGPL-3.0 许可证信息。提交 Issue 或 PR 时，请说明问题是否也能在 [DBJD-CR 原仓库版本](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat) 中复现。
+>
+> 当前 Fork 的版本血缘、维护边界和主要差异见 [Fork 维护与版本说明](docs/fork-maintenance.md)。
+
 为了营造一个开放和热情的社区环境，我们采用了 [贡献者契约](CODE_OF_CONDUCT.md) 作为我们的行为准则。请确保您在参与贡献之前，已经阅读并同意遵守它。
 
 在参与贡献之前，请仔细阅读以下指南：
@@ -11,26 +16,26 @@
 
 ### 🐛 报告 Bug
 
-如果您在使用过程中发现了 Bug，请通过提交 [**Bug 报告**](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/issues/new?template=bug_report.yml) 来帮助我们。请在提交 Issue 之前：
+如果您在使用过程中发现了 Bug，请通过提交 [**Bug 报告**](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues/new?template=bug_report.yml) 来帮助我们。请在提交 Issue 之前：
 
 1. **搜索现有 Issue**：检查是否已经有人报告过类似的问题。
 2. **更新到最新版本**：确保您使用的是插件的最新版本，问题可能已经在新版本中修复。
 
 ### ✨ 提出功能建议 (Feature)
 
-如果您对插件的未来有任何绝妙的想法，欢迎通过提交 [**功能建议**](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/issues/new?template=feature_request.yml) 来与我们分享。请详细描述您的想法和它的使用场景。
+如果您对插件的未来有任何绝妙的想法，欢迎通过提交 [**功能建议**](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues/new?template=feature_request.yml) 来与我们分享。请详细描述您的想法和它的使用场景。
 
 ### ❓ 使用咨询 / 问题讨论 (Discussion)
 
-如果您暂时不能确定这是否是插件 Bug，或者希望就使用方式、配置思路、兼容性排查等问题先进行讨论，欢迎提交 [**使用咨询 / 问题讨论**](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/issues/new?template=discussion.yml)。
+如果您暂时不能确定这是否是插件 Bug，或者希望就使用方式、配置思路、兼容性排查等问题先进行讨论，欢迎提交 [**使用咨询 / 问题讨论**](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues/new?template=discussion.yml)。
 
 ### 📚 文档改进建议 (Docs)
 
-如果您发现 README、配置说明、接口文档或示例存在错误、缺失或表述不清的问题，欢迎提交 [**文档改进建议**](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/issues/new?template=docs.yml) 帮助我们持续完善文档体验。
+如果您发现 README、配置说明、接口文档或示例存在错误、缺失或表述不清的问题，欢迎提交 [**文档改进建议**](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues/new?template=docs.yml) 帮助我们持续完善文档体验。
 
 ### 🎨 设计 / 交互建议 (Design)
 
-如果您对管理面板、配置流程、提示反馈、信息展示或整体使用体验有改进想法，欢迎提交 [**设计 / 交互建议**](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/issues/new?template=design.yml) 与我们讨论。
+如果您对管理面板、配置流程、提示反馈、信息展示或整体使用体验有改进想法，欢迎提交 [**设计 / 交互建议**](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues/new?template=design.yml) 与我们讨论。
 
 ## 💻 代码贡献
 
@@ -58,6 +63,15 @@
 - **格式化**：使用 `ruff` 进行代码格式化和检查。如果您是 Windows 开发者，可以使用插件根目录提供的 `run_ruff.bat` 脚本来快速进行代码格式化检查。
 - **类型注解**：尽可能为函数和类添加 Python 类型提示 (Type Hints)。
 - **文档字符串**：为模块、类和函数编写清晰的 Docstring。
+
+### 兼容性与隐私要求
+
+- 修改消息发送或装饰钩子时，必须验证提前 `event.send()`、末段回填、停止、清空、纯拦截、部分失败和临时文件清理。
+- 修改配置时，必须同时验证 Web API 的严格拒绝和运行时对旧坏配置的安全兜底。
+- 修改 AstrBot API 边界时，至少验证当前 AstrBot；涉及最低版本兼容时还要验证 AstrBot 4.8。
+- 日志不得包含聊天正文、Prompt、完整 UMO、账号或群号、平台实例 ID、conversation ID、密码、Token、绝对路径或第三方异常原文。
+- 本 Fork 不接受重新加入匿名遥测、远程错误上报、配置快照上传或全局 asyncio 异常接管的改动。
+- 不要提交插件运行产生的 `data/`、数据库、Token、真实账号配置或本地测试产物。
 
 ### 提交 Pull Request (PR)
 
@@ -104,8 +118,8 @@
 感谢所有为主动消息插件做出任何形式贡献的个人、团体，包括但不限于：
 
 - @Souler: "创世神"，伟大无需多言。感谢他提供了一个这么好的平台，以及对 AstrBot 的持续维护。
-- @Aloys233: 为本插件提供通知系统、遥测系统等远端服务支持，以及众多日常开发中的便利。
-- @Sisyphbaous-DT-Project: 为主动消息提供了更灵活的上下文来源选择。
+- @Aloys233: 为原项目提供通知系统、历史遥测系统等远端服务支持，以及众多日常开发中的便利；当前 Fork 已移除遥测，但保留这段历史贡献说明。
+- @Sisyphbaous-DT-Project: 为主动消息提供更灵活的上下文来源选择，并继续维护当前 Fork 的群聊批次、装饰发送兼容、配置安全、生命周期和隐私修复。
 - @Alaye-Dong & @TheFurnia: 帮助修订文档。
 - @NickWoluff: 提供了解决主动消息插件无法与部分插件兼容使用的问题的思路，并帮忙测试插件。
 - @victical: 提供了时区报错的解决方案。

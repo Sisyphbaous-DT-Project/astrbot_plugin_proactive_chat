@@ -16,6 +16,13 @@ import aiofiles.os as aio_os
 
 from astrbot.api import logger
 
+from .group_batch_config import normalize_group_batches, normalize_session_list
+
+try:
+    from ..utils.safe_logging import log_safe_exception
+except ImportError:  # 允许测试直接以 core 包导入模块
+    from utils.safe_logging import log_safe_exception
+
 
 @dataclass(slots=True)
 class CachedMessage:
@@ -132,6 +139,42 @@ class RuntimeContextCache:
             ]
         )
 
+    def _is_recent_duplicate_bot_send(self, message: CachedMessage) -> bool:
+        """去掉主动直写与 AstrBot 发送后事件对同一条 Bot 消息的短窗重复记录。"""
+        if message.source not in {"proactive_send", "after_message_sent"}:
+            return False
+        if message.role not in {"assistant", "bot"}:
+            return False
+
+        bucket = self.messages.get(message.normalized_umo)
+        if not bucket:
+            return False
+
+        text_hash = self._hash_text(message.text.strip())
+        for existing in reversed(bucket):
+            if message.ts - existing.ts > 5:
+                break
+            if existing.source not in {"proactive_send", "after_message_sent"}:
+                continue
+            # 同一来源的两条相同正文仍可能是用户真实看到的两次消息，
+            # 只有主动直写与发送后事件这两个来源交叉时才允许短窗去重。
+            if existing.source == message.source:
+                continue
+            if existing.role not in {"assistant", "bot"}:
+                continue
+            if existing.sender_id != message.sender_id:
+                continue
+            # 两个不同的平台消息 ID 说明物理消息已经被平台区分，不能吞掉后者。
+            if (
+                existing.message_id
+                and message.message_id
+                and existing.message_id != message.message_id
+            ):
+                continue
+            if self._hash_text(existing.text.strip()) == text_hash:
+                return True
+        return False
+
     def _remember_key(self, key: str) -> None:
         if key in self.seen_message_key_set:
             return
@@ -152,6 +195,8 @@ class RuntimeContextCache:
     def append(self, message: CachedMessage) -> bool:
         """追加消息记录；返回 False 表示重复消息。"""
         if not message.text.strip():
+            return False
+        if self._is_recent_duplicate_bot_send(message):
             return False
 
         key = self._build_dedupe_key(message)
@@ -574,14 +619,20 @@ class RuntimeContextCacheMixin:
             settings = getattr(self, "config", {}).get(settings_key, {})
             if not isinstance(settings, dict) or not settings.get("enable", False):
                 continue
-            for session_id in settings.get("session_list", []) or []:
+            for session_id in normalize_session_list(
+                settings.get("session_list", []),
+                path=f"{settings_key}.session_list",
+            ):
                 if session_id:
                     sessions.add(self._normalize_session_id(str(session_id)))
 
         # 批次群聊也需要纳入缓存候选
         group_settings = getattr(self, "config", {}).get("group_settings", {})
         if isinstance(group_settings, dict) and group_settings.get("enable", False):
-            for batch in getattr(self, "config", {}).get("group_batches", []) or []:
+            batches = normalize_group_batches(
+                getattr(self, "config", {}).get("group_batches", [])
+            )
+            for batch in batches:
                 for session_id in batch.get("session_list", []) or []:
                     if session_id:
                         sessions.add(self._normalize_session_id(str(session_id)))
@@ -667,7 +718,13 @@ class RuntimeContextCacheMixin:
                     "[主动消息] 最近聊天记录文件已读取，但当前配置下没有可恢复的记录。"
                 )
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
-            logger.error(f"[主动消息] 读取最近聊天记录文件失败：{e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-CACHE-001",
+                "读取最近聊天记录文件失败",
+                e,
+            )
 
     async def _save_runtime_context_cache_to_disk(self) -> None:
         self._refresh_runtime_context_cache_limits()
@@ -702,7 +759,13 @@ class RuntimeContextCacheMixin:
                 f"[主动消息] 最近聊天记录已保存：{session_count} 个会话，{message_count} 条消息。"
             )
         except OSError as e:
-            logger.error(f"[主动消息] 保存最近聊天记录失败：{e}")
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-CACHE-002",
+                "保存最近聊天记录失败",
+                e,
+            )
 
     def _mark_runtime_context_cache_dirty(self, session_id: str) -> None:
         normalized_session_id = self._normalize_session_id(session_id)
@@ -738,7 +801,13 @@ class RuntimeContextCacheMixin:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.error(f"[主动消息] 最近聊天记录自动保存失败：{e}", exc_info=True)
+            log_safe_exception(
+                logger,
+                "error",
+                "PC-CACHE-003",
+                "最近聊天记录自动保存失败",
+                e,
+            )
         finally:
             if getattr(self, "runtime_cache_save_task", None) is asyncio.current_task():
                 self.runtime_cache_save_task = None
@@ -756,8 +825,12 @@ class RuntimeContextCacheMixin:
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.error(
-                    f"[主动消息] 等待最近聊天记录保存时出错：{e}", exc_info=True
+                log_safe_exception(
+                    logger,
+                    "error",
+                    "PC-CACHE-004",
+                    "等待最近聊天记录保存时出错",
+                    e,
                 )
 
         dirty_sessions = getattr(self, "runtime_cache_dirty_sessions", None)
@@ -910,10 +983,16 @@ class RuntimeContextCacheMixin:
         parsed = getattr(self, "_parse_session_id", lambda _: None)(session_id)
         if parsed:
             message_type = parsed[1]
-            if "Group" in message_type or "Guild" in message_type:
+            if message_type in {"GroupMessage", "GuildMessage"}:
                 return "group"
-        if "group" in str(session_id).lower() or "guild" in str(session_id).lower():
-            return "group"
+        else:
+            # 兼容独立使用该 Mixin 的最小夹具；仍只匹配标准消息类型锚点。
+            text = str(session_id)
+            if any(
+                f":{message_type}:" in text
+                for message_type in ("GroupMessage", "GuildMessage")
+            ):
+                return "group"
         return "private"
 
     async def _cache_runtime_private_user_message(

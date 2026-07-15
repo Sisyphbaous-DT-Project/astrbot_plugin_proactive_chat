@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         感谢您抽出时间发起讨论！如果您暂时不能确定这是否是插件 Bug，或者希望先进行使用咨询、兼容性排查、方案讨论，都可以使用该模板。
+        当前仓库是 Sisyphbaous-DT-Project 维护的 Fork。请注明使用的仓库与版本，并尽量说明 DBJD-CR 原项目是否也有相同现象。
 
   - type: textarea
     attributes:
@@ -51,7 +52,7 @@ body:
     attributes:
       label: 插件版本
       description: 请填写你当前使用的插件版本。
-      placeholder: '如: v1.2.0'
+      placeholder: '如: Fork v1.3.1（请注明是否为 Sisyphbaous-DT-Project 版本）'
     validations:
       required: true
 

@@ -3,7 +3,7 @@
 <!-- markdownlint-disable MD033 -->
 <!-- markdownlint-disable MD041 -->
 
-![astrbot_plugin_proactive_chat](https://socialify.git.ci/DBJD-CR/astrbot_plugin_proactive_chat/image?custom_description=%F0%9F%92%96+%E8%AE%A9%E4%BD%A0%E7%9A%84+Bot+%E6%8B%A5%E6%9C%89%E4%B8%BB%E5%8A%A8%E5%85%B3%E6%80%80%E7%9A%84%E7%81%B5%E9%AD%82&description=1&font=Inter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Formal+Invitation&pulls=1&stargazers=1&theme=Auto)
+![astrbot_plugin_proactive_chat](https://socialify.git.ci/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/image?custom_description=%F0%9F%92%96+%E8%AE%A9%E4%BD%A0%E7%9A%84+Bot+%E6%8B%A5%E6%9C%89%E4%B8%BB%E5%8A%A8%E5%85%B3%E6%80%80%E7%9A%84%E7%81%B5%E9%AD%82&description=1&font=Inter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Formal+Invitation&pulls=1&stargazers=1&theme=Auto)
 
 <div align="center">
 
@@ -24,18 +24,38 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/AstrBot-v4.23.6%20Compatible-brightgreen.svg" alt="Compatible with AstrBot v4.23.6">
-  <img src="https://img.shields.io/github/v/release/DBJD-CR/astrbot_plugin_proactive_chat?label=Release&color=brightgreen" alt="Latest Release">
-  <img src="https://img.shields.io/badge/QQ_Group-1033089808-12B7F3.svg" alt="QQ Group">
+  <img src="https://img.shields.io/badge/Tested-AstrBot%204.8.0%20%2F%20current-brightgreen.svg" alt="Tested with AstrBot 4.8.0 and current versions">
+  <img src="https://img.shields.io/github/v/release/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat?label=Fork%20Release&color=brightgreen" alt="Latest Fork Release">
+  <img src="https://img.shields.io/badge/Fork-v1.3.1-2ea44f.svg" alt="Fork v1.3.1">
 </p>
 
 <p align="center">
+  <sub>The DeepWiki and Zread links below describe the DBJD-CR upstream code and do not include this fork's changes after v1.2.3.</sub><br>
   <a href="https://deepwiki.com/DBJD-CR/astrbot_plugin_proactive_chat" target="_blank"><img src="https://deepwiki.com/badge.svg" alt="deepwiki"></a>
   <a href="https://zread.ai/DBJD-CR/astrbot_plugin_proactive_chat" target="_blank"><img src="https://img.shields.io/badge/Ask_Zread-_.svg?style=flat&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff" alt="zread"/></a>
 </p>
 
-[![Moe Counter](https://count.getloli.com/get/@DBJD-CR?theme=moebooru)](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat)
+[![Moe Counter](https://count.getloli.com/get/@Sisyphbaous-DT-Project-astrbot-plugin-proactive-chat?theme=moebooru)](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat)
 <img width="256" height="256" align="right" alt="logo" src="https://github.com/user-attachments/assets/1099597c-8d2f-4a4c-828c-43d5e7162733" />
+
+---
+
+> [!IMPORTANT]
+> **This repository is a fork maintained by Sisyphbaous-DT-Project.**
+>
+> The original project was created by [DBJD-CR](https://github.com/DBJD-CR) at [DBJD-CR/astrbot_plugin_proactive_chat](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat). This fork continues from the original `v1.2.3` code line: fork `v1.2.4` established the maintenance baseline, fork `v1.3.0` added group-batch configuration, and the current `v1.3.1` focuses on decorator-plugin delivery, configuration resilience, Web console authentication, lifecycle safety, and log privacy.
+>
+> This fork preserves the original authorship, contribution history, and AGPL-3.0 license. It is not an official release from the original repository. See [Fork Maintenance and Version Notes](docs/fork-maintenance.md) for the full lineage and submit fork-specific reports to the [current Issues page](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues).
+
+### v1.3.1 highlights
+
+- Fixed the missing first segment when OutputPro-style decorators call `event.send()` before returning the final segment.
+- Proactive messages now enter the standard decorator chain as LLM results, with correct early-send, final-segment, stop, clear, and suppression behavior.
+- Cache, history, unanswered counters, and group-idle timers now follow actual physical delivery outcomes; partial success no longer retries the full reply.
+- Added unified strict API validation and tolerant runtime normalization for group batches, scheduling, context, TTS, and segmented-reply settings.
+- Fixed Web console `no-auth` bypasses, stale HTTP/WebSocket credentials, and WebSocket tokens exposed in URL query parameters.
+- Removed all anonymous telemetry and remote error reporting from this fork, and tightened exception logging, identifier privacy, and temporary-file cleanup.
+- Verified against the current AstrBot environment, an AstrBot 4.8 archive, and OutputPro timeline tests. See [CHANGELOG](CHANGELOG.md) for exact test counts.
 
 ---
 
@@ -49,6 +69,9 @@ If you want your AI companion to feel more emotionally present, or simply want y
 > In most cases, using the latest AstrBot release is recommended for the best experience.
 >
 > The plugin is currently in a fairly stable stage of development, and this repository will continue to be actively maintained.
+
+> [!NOTE]
+> The original “Developer’s Note,” project history, QQ group, and related links below are preserved from DBJD-CR’s upstream project for attribution and historical context. Fork releases and issue tracking are handled by the Sisyphbaous-DT-Project repository.
 
 ## 📑 Quick Navigation
 
@@ -165,7 +188,7 @@ If you want your AI companion to feel more emotionally present, or simply want y
 
 ## 🚀 Installation & Usage
 
-1. **Download the plugin**: Install it from the AstrBot marketplace, or download the `astrbot_plugin_proactive_chat` `.zip` package from this repository’s Releases and choose `Install from file` on AstrBot’s plugin page in the WebUI.
+1. **Download this fork**: Download a source archive from the [Sisyphbaous-DT-Project fork repository](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat), or obtain the package from [Fork Releases](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/releases) after `v1.3.1` is formally published, then choose `Install from file` on AstrBot's plugin page in the WebUI. The identically named AstrBot marketplace entry may be the DBJD-CR upstream build; to receive the OutputPro, authentication, configuration, and privacy fixes documented here, verify both the repository URL and version rather than relying on the plugin name alone.
 2. **Install dependencies**: Most core dependencies are already included in AstrBot’s default environment, and plugin dependencies are usually installed automatically during plugin installation. In most cases, no extra steps are needed. If your environment is missing required packages, install:
 
     ```bash
@@ -717,6 +740,31 @@ The structures of [`tts_settings`](README.md) and [`segmented_reply_settings`](R
 }
 ```
 
+#### 👥 2.1 Group batches (`group_batches`)
+
+If different groups need different quiet-time or scheduling policies, add them to `group_batches`. Each item is an object with a `batch_name`, a `session_list`, and optional overrides such as `group_idle_trigger_minutes`, `min_interval_minutes`, `max_interval_minutes`, `quiet_hours`, `max_unanswered_times`, and `proactive_prompt`.
+
+The file Schema intentionally declares this field as a normal `list` so AstrBot 4.8 can still load the plugin. Newer AstrBot versions upgrade it in memory to a template list and show the object editor. The plugin’s own Web console uses a JSON-array editor for the same data; each batch must remain an object, not a quoted string.
+
+```json
+{
+  "group_batches": [
+    {
+      "batch_name": "Quiet groups",
+      "session_list": ["default:GroupMessage:123456789"],
+      "group_idle_trigger_minutes": 60,
+      "min_interval_minutes": 120,
+      "max_interval_minutes": 480,
+      "quiet_hours": "2-6",
+      "max_unanswered_times": 2,
+      "proactive_prompt": ""
+    }
+  ]
+}
+```
+
+An empty field inherits the corresponding value from `group_settings`. A group matching a batch uses the first matching batch, and batch settings take priority over the global group session list.
+
 ### 🌐 3. Web Console Settings (`web_admin`)
 
 This section controls whether the plugin’s built-in WebUI is enabled, which address it listens on, and whether password-based access is required.
@@ -772,17 +820,6 @@ This section primarily serves the Notification Center in the plugin’s built-in
   - Range: `30 - 3600` seconds
   - Description: Interval at which the plugin actively fetches notification updates from the remote source.
   - Tip: Even if you set a smaller value, runtime handling will still enforce a minimum of 30 seconds.
-
-### 📡 5. Anonymous Telemetry Settings (`telemetry_config`)
-
-- **Enable anonymous telemetry (`enabled`)**:
-  - Type: `Boolean`
-  - Default: `true`
-  - Description: When enabled, the plugin anonymously reports certain configuration statistics and error information to help the developer improve plugin quality.
-  - Privacy notes:
-    - Session lists are not reported.
-    - Proactive prompts are not reported.
-    - Sensitive information such as the Web console password is not reported.
 
 ---
 
@@ -869,10 +906,10 @@ If you are only optimizing content behavior, reloading is usually unnecessary. B
 
 ## 📂 Project Structure
 
-Starting from `v1.2.0`, the plugin has been restructured into a **frontend console + modular backend core** architecture. In later iterations, it also gained a **notification system**, **telemetry system**, and better documentation organization:
+Starting from `v1.2.0`, the plugin has been restructured into a **frontend console + modular backend core** architecture. In later iterations, it also gained a **notification system** and better documentation organization:
 
 - **Frontend (`admin/`)**: Provides an independent Web management console for runtime status display, task management, notification center, documentation browsing, configuration editing, and real-time synchronization.
-- **Backend core (`core/`)**: Split into clearly scoped modules handling session configuration, scheduling, message sending, context construction, persistence, notification sync, telemetry, and the Web management service.
+- **Backend core (`core/`)**: Split into clearly scoped modules handling session configuration, scheduling, message sending, context construction, persistence, notification sync, and the Web management service.
 - **Utility modules (`utils/`)**: Shared tools reused across modules, such as time handling and version reading.
 - **Repository root**: Keeps the plugin entry point, configuration schema, dependency declarations, and project documentation.
 
@@ -958,7 +995,6 @@ AstrBot/
          │  ├─ session_override_manager.py    # Per-session override management
          │  ├─ session_parser.py              # Session ID parsing and normalization
          │  ├─ task_scheduler.py              # Scheduled tasks and trigger orchestration
-         │  ├─ telemetry_manager.py           # Anonymous telemetry, config snapshot filtering, and error sanitization
          │  └─ web_admin_server.py            # Web console service and notification API bridge
          │
          ├─ docs/                             # Supplementary documentation
@@ -977,7 +1013,6 @@ AstrBot/
 └─ data/
    └─ plugin_data/
       └─ astrbot_plugin_proactive_chat/
-         ├─ .telemetry_id                     # Anonymous telemetry instance ID (created after telemetry is first enabled)
          ├─ notifications_cache.json          # Local notification cache and read state (created after notification system is enabled)
          ├─ prompts_collection.md             # Auto-generated prompt collection
          ├─ session_data.json                 # Persistent session data and scheduling state
@@ -988,7 +1023,6 @@ Notes:
 
 - `session_data.json` stores runtime session state such as unanswered counts, recent message time, and next trigger time.
 - `notifications_cache.json` stores the remote notification list, local read state, and the most recent sync time.
-- `.telemetry_id` stores a stable anonymous identifier for the current installation instance, allowing the telemetry platform to group events from the same instance.
 - `prompts_collection.md` and `user_config_snapshot.json`: backups of prompts and configuration saved by versions before `v1.2.0`. Because of the refactor in `v1.2.0`, these features were temporarily removed. You can still use these backup files to help recover your personalized configuration from before the upgrade.
 
 ---
@@ -1322,8 +1356,6 @@ flowchart LR
         I4[Runtime Status / Task / Config APIs]
         I5[Notification Center]
         I6[Remote Notification Fetch & Read-State Sync]
-        I7[Anonymous Telemetry]
-        I8[Startup / Heartbeat / Error / Shutdown Reporting]
     end
 
     %% ===== External Dependencies =====
@@ -1334,7 +1366,6 @@ flowchart LR
         J4[Voice Service]
         J5[Platform Delivery Capability]
         J6[Notification Platform]
-        J7[Telemetry Service]
         J8[Local File System]
     end
 
@@ -1360,7 +1391,6 @@ flowchart LR
     B1 --> E3
     B1 --> I1
     B1 --> I5
-    B1 --> I7
 
     B4 --> B5
     B4 --> B6
@@ -1444,14 +1474,12 @@ flowchart LR
     I1 --> C1
     I5 --> I6 --> J6
     I6 --> I3
-    I7 --> I8 --> J7
 
     F8 --> K1
     C6 --> K2
     D1 --> K3
     D2 --> K3
     I5 --> K5
-    I7 --> K5
 
     %% ===== Style Bindings =====
     class A1,A2,A3,A4 entry;
@@ -1462,8 +1490,8 @@ flowchart LR
     class F1,F2,F3,F4,F5,F6,F7,F8,F9,F10 core;
     class G1,G2,G3,G4,G5,G6,G7,G8 side;
     class H1,H2,H3,H4,H5,H6 side;
-    class I1,I2,I3,I4,I5,I6,I7,I8 side;
-    class J1,J2,J3,J4,J5,J6,J7,J8 ext;
+    class I1,I2,I3,I4,I5,I6 side;
+    class J1,J2,J3,J4,J5,J6,J8 ext;
     class K1,K2,K3,K4,K5 result;
 ```
 
@@ -1488,7 +1516,7 @@ Overall, the frontend can be summarized as: **lightweight deployment, centralize
 
 #### 🧩 II. Backend Architecture Design & Runtime Mechanism
 
-The backend is centered on `ProactiveChatPlugin` as the composition hub, splitting session parsing, configuration application, persistence, scheduling, context preparation, message sending, the Web console, notifications, and telemetry into independent modules that work together. The overall approach is **one main class holding shared state, while specialized modules handle concrete responsibilities**, which keeps the structure clearer and easier to maintain.
+The backend is centered on `ProactiveChatPlugin` as the composition hub, splitting session parsing, configuration application, persistence, scheduling, context preparation, message sending, the Web console, and notifications into independent modules that work together. The overall approach is **one main class holding shared state, while specialized modules handle concrete responsibilities**, which keeps the structure clearer and easier to maintain.
 
 The lifecycle entry point is `initialize()`. On startup, the plugin first validates configuration, loads and normalizes session data, restores timezone and recent-message timestamps, then starts the scheduler, restores available tasks, rebuilds auto-triggers, and finally starts the notification system and Web console. The key design idea is that the plugin does not “wait until the next message to get ready”; instead, it prepares the full runtime environment during startup so state can continue across reloads.
 
@@ -1502,7 +1530,7 @@ When a proactive message is actually executed, the entry point is `check_and_cha
 
 The sending stage is handled by `SenderMixin`. It decides whether to enable TTS, whether to use segmented sending, and whether decorator hooks should be triggered. In other words, proactive messages do not bypass AstrBot’s existing ecosystem—they try to reuse the existing sending pipeline as much as possible so compatibility with other decorator-style plugins is preserved. After a successful send, `_finalize_and_reschedule()` writes the generated content back into conversation history, updates the unanswered count, and then either schedules the next private-chat task or returns the group chat to its idle waiting state, depending on session type.
 
-In addition to that, the backend also attaches two auxiliary subsystems: `WebAdminServer`, which exposes runtime status, tasks, configuration, and notifications to the frontend console through HTTP + WebSocket; and `NotificationCenter` plus `TelemetryManager`, which handle announcement synchronization and anonymous telemetry respectively. These belong to the **enhanced control plane**. Even if they fail occasionally, they do not block the main proactive messaging pipeline.
+In addition to that, the backend also attaches two auxiliary subsystems: `WebAdminServer`, which exposes runtime status, tasks, configuration, and notifications to the frontend console through HTTP + WebSocket; and `NotificationCenter`, which handles announcement synchronization. These belong to the **enhanced control plane**. Even if they fail occasionally, they do not block the main proactive messaging pipeline.
 
 Overall, this backend is essentially a **hybrid event-driven + scheduler-driven** session-state pipeline: message events interrupt and reset state, the scheduler waits and triggers execution, the LLM generates content, the sender performs actual delivery, and persistence plus the Web console provide restoration and observability.
 
@@ -1514,6 +1542,9 @@ Overall, this backend is essentially a **hybrid event-driven + scheduler-driven*
 
 | Version | Status | Summary | Recommended AstrBot Version |
 | :--- | :--- | :--- | :--- |
+| **Fork v1.3.1** | ✅ Current maintained release | Real decorator delivery, resilient configuration, authentication, lifecycle, and privacy fixes | v4.8.0+; latest recommended |
+| **Fork v1.3.0** | ⚠️ Superseded | Added group-batch configuration on top of fork v1.2.4 | v4.8.0+ |
+| **Fork v1.2.4** | ✅ Fork baseline | Maintenance baseline created from DBJD-CR upstream v1.2.3 | v4.8.0+ |
 | **v1.2.0** | ⚠️ Major refactor | Introduced WebUI and refactored session ID format | v4.22.1+ |
 | **v1.1.5** | ✅ Stable | Added configuration backup in preparation for the refactor | v4.10.2+ |
 | **v1.1.2** | ✅ Architecture upgrade | Added decorator-hook support and improved compatibility with other plugins | v4.10.2+ |
@@ -1523,7 +1554,7 @@ Overall, this backend is essentially a **hybrid event-driven + scheduler-driven*
 | **v0.9.97** | ✅ Stable | Final stable version for single private-chat mode | v4.5.2+ |
 | **v0.9.7** | ⚠️ First public release | Contains many foundational issues and is not recommended for download | v3.5.19+ |
 
-For more historical release details, see the changelog: [CHANGELOG](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat/blob/main/CHANGELOG.md).
+For current fork releases, see this repository’s [CHANGELOG](CHANGELOG.md) and [Fork Maintenance Notes](docs/fork-maintenance.md). For upstream `v1.2.3` and earlier history, see the [DBJD-CR repository](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat).
 
 ---
 
@@ -1546,6 +1577,18 @@ For more historical release details, see the changelog: [CHANGELOG](https://gith
 > 2. There is currently no active proactive task already running.
 > 3. The session configuration is enabled and valid.
 > 4. If any message is received, the auto-trigger will be canceled. (This is normal behavior.)
+
+**Q: Why is the first proactive segment missing when OutputPro or another output enhancer splits the reply?**
+
+> **A**: Make sure you are using this fork at `v1.3.1` or newer. In the old sending path, the synthetic event could not physically deliver a decorator’s early `event.send()`, so the first segment could appear in logs without reaching the chat. `v1.3.1` uses a real sending event and verifies ordered early/final delivery. If the issue remains, report the AstrBot version, enhancer version, sanitized split settings, and fixed error code without including real chat content.
+
+**Q: Why is group-batch editing limited in AstrBot 4.8?**
+
+> **A**: AstrBot 4.8 does not support the newer object-template-list Schema type. To keep the plugin loadable, this fork stores `group_batches` as a normal list. Use the plugin’s own Web console or edit the configuration JSON directly; newer AstrBot versions upgrade the editor in memory when supported.
+
+**Q: Why is the anonymous telemetry switch gone?**
+
+> **A**: This fork completely removed anonymous telemetry, remote error reporting, instance IDs, and heartbeat reporting, so `telemetry_config` is no longer used. The notification center remains as an optional user-visible announcement feature and does not upload chat content or error details.
 
 **Q: What if my platform is not supported?**
 
@@ -1628,7 +1671,7 @@ For more historical release details, see the changelog: [CHANGELOG](https://gith
 
 **Q: What should I do if I see an error in the logs?**
 
-> **A**: Copy the complete error log, including the error type and stack trace, then ask for help in the QQ group (`1033089808`) or open an Issue on GitHub.
+> **A**: Record the fixed error code (for example, `PC-SEND-xxx`), plugin version, AstrBot version, related plugin versions, and reproduction steps, then open an issue in the [fork repository](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues). Do not publish real chat content, prompts, full UMOs, account identifiers, passwords, tokens, or unchecked full stack traces. Sanitize any required configuration first.
 
 ### ⚠️ Impact of AstrBot Rate Limiting
 
@@ -1709,7 +1752,7 @@ My other plugins:
 
 ## 📞 Contact
 
-If you have any questions, suggestions, or bug reports regarding this plugin, you are welcome to join my QQ discussion group.
+The QQ group and QR code below are retained as upstream community information. For fork-specific compatibility reports and fixes, please use the [Fork Issues page](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues).
 
 - **QQ Group**: 1033089808
 - **Group QR Code**:
@@ -1718,7 +1761,7 @@ If you have any questions, suggestions, or bug reports regarding this plugin, yo
 
 ## 🤝 Contributing
 
-Issues and Pull Requests are always welcome to help improve this plugin. After multiple rounds of iteration, it has finally reached a stable and usable state, but there is still plenty of room for improvement.
+Issues and pull requests for the maintained fork are welcome at [Fork Issues](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/issues) and [Fork Pull Requests](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat/pulls). Please read [CONTRIBUTING](CONTRIBUTING.md) and state whether the problem occurs in the fork or the upstream version.
 
 ## 📄 License
 
@@ -1730,10 +1773,6 @@ This plugin is licensed under AGPL v3.0, which means:
 - If you use this plugin in a network service, you must disclose the source code.
 - Any modifications must be distributed under the same license.
 
-## 📊 Repository Status
-
-![Alt](https://repobeats.axiom.co/api/embed/0aeb963734b007c597e3d98009e311318b8f4f1e.svg "Repobeats analytics image")
-
 ## <span id="star">⭐️ Stars</span>
 
-[![Star History Chart](https://api.star-history.com/svg?repos=DBJD-CR/astrbot_plugin_proactive_chat&type=Date)](https://www.star-history.com/#DBJD-CR/astrbot_plugin_proactive_chat&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat&type=Date)](https://www.star-history.com/#Sisyphbaous-DT-Project/astrbot_plugin_proactive_chat&Date)
